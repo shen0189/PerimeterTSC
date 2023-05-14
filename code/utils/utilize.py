@@ -28,7 +28,7 @@ def import_train_configuration():
         DDPG: Can be centralized & decentralized
     '''
     config['mode'] = 'train' # 'test' 'train'
-    config['upper_mode'] = 'Expert'  # 'Static' # 'DDPG' #'DQN' # 'Expert' # 'MaxPressure' # 'C_DQN' # 'PI'
+    config['upper_mode'] = 'DQN'  # 'Static' # 'DDPG' #'DQN' # 'Expert' # 'MaxPressure' # 'C_DQN' # 'PI'
     config['lower_mode'] = 'MaxPressure'  # 'FixTime'  #'OAM' # 'MaxPressure'
     config['peri_action_mode'] = 'centralize' # 'decentralize' 'centralize'
 
