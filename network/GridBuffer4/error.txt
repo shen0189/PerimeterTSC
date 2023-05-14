@@ -1,0 +1,3 @@
+Warning: Unused states in tlLogic 'B0', program '0' in phase 0 after tl-index 14
+Warning: Unused states in tlLogic 'D0', program '0' in phase 0 after tl-index 14
+Warning: Vehicle 'F301600.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=274.00.

@@ -1,0 +1,2 @@
+Warning: Unused states in tlLogic 'B0', program '0' in phase 0 after tl-index 14
+Warning: Unused states in tlLogic 'D0', program '0' in phase 0 after tl-index 14

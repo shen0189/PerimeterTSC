@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 05/12/21 19:17:20 by Eclipse SUMO netedit Version 1.8.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <sumo-net-file value="E:\StevenSU\OneDrive%20-%20City%20University%20of%20Hong%20Kong\Research%20in%20CityU\Code\SUMO_MFD\Bilevel_3.0\network\GridBuffer.net.xml"/>
+    </input>
+
+    <output>
+        <output-file value="E:\StevenSU\OneDrive%20-%20City%20University%20of%20Hong%20Kong\Research%20in%20CityU\Code\SUMO_MFD\Bilevel_3.0\network\GridBuffer.net.xml"/>
+        <plain-output-prefix value="E:\StevenSU\OneDrive%20-%20City%20University%20of%20Hong%20Kong\Research%20in%20CityU\Code\SUMO_MFD\Bilevel_3.0\network\GridBuffer\GridBuffer"/>
+    </output>
+
+    <processing>
+        <geometry.min-radius.fix.railways value="false"/>
+        <geometry.max-grade.fix value="false"/>
+        <offset.disable-normalization value="true"/>
+        <lefthand value="false"/>
+    </processing>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+        <junctions.corner-detail value="5"/>
+        <junctions.limit-turn-speed value="5.5"/>
+        <rectangular-lane-cut value="false"/>
+    </junctions>
+
+    <pedestrian>
+        <walkingareas value="false"/>
+    </pedestrian>
+
+    <netedit>
+        <edgeTypes-output value="E:\StevenSU\OneDrive - City University of Hong Kong\Research in CityU\Code\SUMO_MFD\Bilevel_3.0\network\Edge.xml"/>
+    </netedit>
+
+    <report>
+        <aggregate-warnings value="5"/>
+    </report>
+
+</configuration>
+-->
+
+<nodes version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/nodes_file.xsd">
+    <location netOffset="0.00,0.00" convBoundary="-1000.00,-1000.00,3000.00,3000.00" origBoundary="0.00,0.00,2000.00,2000.00" projParameter="!"/>
+
+    <node id="0" x="0.00" y="0.00" type="priority"/>
+    <node id="1" x="0.00" y="500.00" type="traffic_light" tl="A1"/>
+    <node id="10" x="1000.00" y="0.00" type="traffic_light" tl="C0"/>
+    <node id="11" x="1000.00" y="500.00" type="traffic_light" tl="C1"/>
+    <node id="12" x="1000.00" y="1000.00" type="traffic_light" tl="C2"/>
+    <node id="13" x="1000.00" y="1500.00" type="traffic_light" tl="C3"/>
+    <node id="14" x="1000.00" y="2000.00" type="traffic_light" tl="C4"/>
+    <node id="15" x="1500.00" y="0.00" type="traffic_light" tl="D0"/>
+    <node id="16" x="1500.00" y="500.00" type="traffic_light" tl="D1"/>
+    <node id="17" x="1500.00" y="1000.00" type="traffic_light" tl="D2"/>
+    <node id="18" x="1500.00" y="1500.00" type="traffic_light" tl="D3"/>
+    <node id="19" x="1500.00" y="2000.00" type="traffic_light" tl="D4"/>
+    <node id="2" x="0.00" y="1000.00" type="traffic_light" tl="A2"/>
+    <node id="20" x="2000.00" y="0.00" type="priority"/>
+    <node id="21" x="2000.00" y="500.00" type="traffic_light" tl="E1"/>
+    <node id="22" x="2000.00" y="1000.00" type="traffic_light" tl="E2"/>
+    <node id="23" x="2000.00" y="1500.00" type="traffic_light" tl="E3"/>
+    <node id="24" x="2000.00" y="2000.00" type="priority"/>
+    <node id="25" x="-500.00" y="1000.00" type="traffic_light" tl="P0"/>
+    <node id="26" x="1000.00" y="2500.00" type="traffic_light" tl="P1"/>
+    <node id="27" x="2500.00" y="1000.00" type="traffic_light" tl="P2"/>
+    <node id="28" x="1000.00" y="-500.00" type="traffic_light" tl="P3"/>
+    <node id="29" x="-1000.00" y="1000.00" type="dead_end"/>
+    <node id="3" x="0.00" y="1500.00" type="traffic_light" tl="A3"/>
+    <node id="30" x="1000.00" y="3000.00" type="dead_end"/>
+    <node id="31" x="3000.00" y="1000.00" type="dead_end"/>
+    <node id="32" x="1000.00" y="-1000.00" type="dead_end"/>
+    <node id="4" x="0.00" y="2000.00" type="priority"/>
+    <node id="5" x="500.00" y="0.00" type="traffic_light" tl="B0"/>
+    <node id="6" x="500.00" y="500.00" type="traffic_light" tl="B1"/>
+    <node id="7" x="500.00" y="1000.00" type="traffic_light" tl="B2"/>
+    <node id="8" x="500.00" y="1500.00" type="traffic_light" tl="B3"/>
+    <node id="9" x="500.00" y="2000.00" type="traffic_light" tl="B4"/>
+</nodes>

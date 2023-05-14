@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2022-08-02 00:39:23 by Eclipse SUMO sumo Version 1.9.2
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="network/GridBuffer3/GridBuffer.net.xml"/>
+        <route-files value="network/GridBuffer3/GridBuffer.rou.xml"/>
+        <additional-files value="network/GridBuffer3/GridBuffer.add.xml"/>
+    </input>
+
+    <output>
+        <queue-output value="network/GridBuffer3/queue.xml"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="10800"/>
+    </time>
+
+    <processing>
+        <time-to-teleport value="120"/>
+    </processing>
+
+    <report>
+        <verbose value="true"/>
+        <no-warnings value="true"/>
+        <no-step-log value="true"/>
+    </report>
+
+    <traci_server>
+        <remote-port value="62944"/>
+    </traci_server>
+
+    <gui_only>
+        <quit-on-end value="true"/>
+        <start value="true"/>
+    </gui_only>
+
+</configuration>
+-->
+
+<tlsStates xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/tlsstates_file.xsd">
+    <tlsState time="0.00" id="P0" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="0.00" id="P2" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="0.00" id="P1" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="0.00" id="P3" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="60.00" id="P2" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="60.00" id="P3" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="65.00" id="P3" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="65.00" id="P2" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="80.00" id="P2" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="80.00" id="P3" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="85.00" id="P3" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="85.00" id="P2" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="100.00" id="P0" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="100.00" id="P2" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="100.00" id="P3" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="100.00" id="P1" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="105.00" id="P0" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="105.00" id="P3" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="105.00" id="P2" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="105.00" id="P1" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="120.00" id="P0" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="120.00" id="P2" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="120.00" id="P1" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="120.00" id="P3" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="125.00" id="P0" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="125.00" id="P3" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="125.00" id="P1" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="125.00" id="P2" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="140.00" id="P2" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="140.00" id="P3" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="145.00" id="P3" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="145.00" id="P2" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="160.00" id="P2" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="160.00" id="P3" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="165.00" id="P3" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="165.00" id="P2" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="180.00" id="P2" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="180.00" id="P1" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="180.00" id="P3" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="185.00" id="P3" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="185.00" id="P1" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="185.00" id="P2" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="200.00" id="P0" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="200.00" id="P2" programID="online" phase="0" state="yyyrrr"/>
+    <tlsState time="200.00" id="P1" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="200.00" id="P3" programID="online" phase="0" state="rrryyy"/>
+    <tlsState time="205.00" id="P0" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="205.00" id="P3" programID="online" phase="0" state="GGGrrr"/>
+    <tlsState time="205.00" id="P2" programID="online" phase="0" state="rrrGGG"/>
+    <tlsState time="205.00" id="P1" programID="online" phase="0" state="GGGrrr"/>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="GridBuffer.net.xml"/>
+        <route-files value="GridBuffer.rou.xml"/>
+        <!-- <route-files value="test.rou.xml"/> -->
+        <additional-files value="GridBuffer.add.xml"/>
+
+    </input>
+	
+	<gui_only>
+		<start value="t"/>
+		<quit-on-end value="t"/>
+    </gui_only>
+
+    <time>
+        <begin value="0"/>
+        <end value="10800"/>
+    </time>
+	
+    <processing>
+        <time-to-teleport value="10800"/>
+    </processing>
+	
+</configuration>
