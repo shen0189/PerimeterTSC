@@ -149,7 +149,7 @@ def train():
                 agent_upper.buffer.count += len(buffer_upper)
 
                 ## lower buffer
-                if agent_lower.mode=='OAM':
+                if agent_lower.lower_mode=='OAM':
                     for key in agent_lower.memory.keys():
                         agent_lower.memory[key].extend(buffer_lower[key])
                         agent_lower.memory[key]= agent_lower.memory[key][-agent_lower.buffer_size:]  # pop out
