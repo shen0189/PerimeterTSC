@@ -28,7 +28,7 @@ def import_train_configuration():
         DDPG: Can be centralized & decentralized
     '''
     config['mode'] = 'train' # 'test' 'train'
-    config['upper_mode'] = 'DQN'  # 'Static' # 'DDPG' #'DQN' # 'Expert' # 'MaxPressure' # 'C_DQN' # 'PI'
+    config['upper_mode'] = 'Expert'  # 'Static' # 'DDPG' #'DQN' # 'Expert' # 'MaxPressure' # 'C_DQN' # 'PI'
     config['lower_mode'] = 'MaxPressure'  # 'FixTime'  #'OAM' # 'MaxPressure'
     config['peri_action_mode'] = 'centralize' # 'decentralize' 'centralize'
 
@@ -812,27 +812,29 @@ def write_log(config):
 def plot_tsc_delay(config, tsc_all, e, n_jobs):
     ''' plot delay for each junction
     '''
-    plt.xlabel('signals(sec)')
-    plt.ylabel('Delay(veh m/s)')
-    plt.title('Delay profile')
+    plt.xlabel('tsc_id')
+    plt.ylabel('Delay(1e5 sec)')
+    plt.title('Total delay for each tsc')
     delay= {}
     for t_id, t_value in tsc_all.items():
-        delay[t_id] = sum(t_value.ep_rewards)/1e5
+        delay[t_id] = sum(t_value['delay_step'])/1e5
 
     # delay=sorted(delay)
     sorted_tuples = sorted(delay.items(), key=lambda item: item[1])
     sort_delay = {k: v for k, v in sorted_tuples}
     plt.bar(sort_delay.keys(), sort_delay.values())
+    plt.ylim((0., 5))
 
     # plt.legend()
     # plt.show()
     if e % n_jobs == 0:
-        plt.savefig(
-            f"{config['plots_path_name']}test\e{np.around((e)/n_jobs+1, 0)}_delay.png")
-
+        file_name = f"e{int(np.around((e)/n_jobs+1, 0))}_each_tsc_delay.png"
+        plot_path = os.path.join(config['plots_path_name'], 'test',file_name)
+        plt.savefig(plot_path)
     else:
-        plt.savefig(
-            f"{config['plots_path_name']}e{e+1}_delay.png")
+        file_name = f"e{e+1}_each_tsc_delay.png"
+        plot_path = os.path.join(config['plots_path_name'], 'explore',file_name)
+        plt.savefig(plot_path)
     plt.close()
 
 def plot_lower_reward_epis(reward_epis):

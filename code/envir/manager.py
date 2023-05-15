@@ -87,7 +87,7 @@ class Trainer():
             upper_metric['cul_reward'][0], lower_metric['tsc_perveh_delay_mean'], \
                 upper_metric['peri_entered_vehs'],\
                      upper_metric['peri_waiting_tot'], upper_metric['peri_waiting_mean'], \
-                        lower_metric['tsc_delay_step'],lower_metric['tsc_perveh_delay_step'])
+                        lower_metric['tsc_delay_step'],lower_metric['tsc_perveh_delay_step'],lower_metric['tsc_metrics'])
 
         ## 4.6 process output
         if self.mode == 'train':
@@ -318,7 +318,7 @@ class Trainer():
         '''
         print(f"\r\n### Episode {self.cur_epis+1} Finish --- total obj upper: {upper_metric['cul_obj'][0]} = {upper_metric['cul_reward'][0]}+{upper_metric['cul_penalty'][0]}; #############\r\n network delay mean: {np.around(lower_metric['network_delay_mean'],2)} sec; tsc delay mean:{np.around(lower_metric['tsc_delay_mean'],2)} sec \r\n network perveh delay mean: {np.around(lower_metric['network_perveh_delay_mean'],4)} sec; tsc perveh delay mean:{np.around(lower_metric['tsc_perveh_delay_mean'],4)} sec \r\n tsc through mean: {np.around(lower_metric['tsc_through_mean'],0)} veh/hr*tsc \r\n")
 
-    def plot(self, accu_epis, flow_epis, cumul_obj_upper, cumul_reward_lower, peri_entered_vehs, peri_waiting_tot, peri_waiting_mean,tsc_delay_step, tsc_perveh_delay_step):
+    def plot(self, accu_epis, flow_epis, cumul_obj_upper, cumul_reward_lower, peri_entered_vehs, peri_waiting_tot, peri_waiting_mean,tsc_delay_step, tsc_perveh_delay_step, tsc_metrics):
         ''' plot after one episode
         ''' 
         ## upper actions
@@ -348,9 +348,12 @@ class Trainer():
             # plot_phase_mean_time(self.config, self.agent_lower.controled_light, \
             #     self.agent_lower.tsc, self.cur_epis, self.n_jobs)
         
-        # plot_tsc_delay(self.config, self.agent_lower.tsc, self.cur_epis, self.n_jobs, )
+        ''' network delay with controlled tsc '''
         plot_controlled_tls_delay_epis(self.config, tsc_delay_step,self.cur_epis, self.n_jobs, 2000, 'tsc_delay')
-        plot_controlled_tls_delay_epis(self.config, tsc_perveh_delay_step,self.cur_epis, self.n_jobs, 2,'tsc_perveh_delay')
+        plot_controlled_tls_delay_epis(self.config, tsc_perveh_delay_step,self.cur_epis, self.n_jobs, 1,'tsc_perveh_delay')
+
+        ''' each controlled tsc delay'''
+        plot_tsc_delay(self.config, tsc_metrics, self.cur_epis, self.n_jobs)
 
     def fill_upper_buffer_reward(self, upper_reward_epis, PN_waiting_epis): 
         
