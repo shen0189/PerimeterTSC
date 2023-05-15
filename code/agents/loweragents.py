@@ -450,6 +450,8 @@ class LowerAgents:
 class OAM(LowerAgents):
     ''' A class of Deep Q-network for descrete action
     '''
+
+
     def __init__(self, tsc, netdata, tau=config['tau']):
         super().__init__(tsc, netdata)
         ## feature
@@ -482,41 +484,6 @@ class OAM(LowerAgents):
         
 
 
-    def replay(self):
-        ''' OAM replay
-        '''
-        # print('############ before train ##############')
-        # W, target_W = self.critic.model.get_weights(), self.critic.target_model.get_weights()
-        # print('##Evaluate network')
-        # print(W)
-        # print('##Target network')
-        # print(target_W)       
-        
-        ## Sample experience from buffer
-        states, actions, rewards, dones, new_states, phase_matrix_batch, phase_mask_batch = self.buffer.sample_batch(self.batch_size)
-
-        ## obtain new action
-        max_q_index = self.get_action_batch(new_states, phase_matrix_batch, phase_mask_batch, True )
-
-        ## Predict target q-values using target networks
-        phase_value_target = self.critic.target_predict([new_states, phase_matrix_batch])
-
-        ## Predict original q_values
-        phase_value_old = self.critic.target_predict([new_states, phase_matrix_batch])
-
-        #print(self.actor.target_predict(new_states))
-        
-        ## check nan of Q values
-        if np.isnan(phase_value_target).any():
-            raise Exception('There is NaN in the q-value')
-
-        ## Compute critic target
-        critic_target = self.bellman(rewards, phase_value_old, phase_value_target, max_q_index, dones)
-        
-        ## Train both networks on sampled batch, update target networks
-        _, loss = self.update_models(states, phase_matrix_batch, critic_target)
-        
-        return loss
 
     def bellman(self, rewards,  phase_value, phase_value_target, max_q_index, dones):
         """ Use the Bellman Equation to compute the critic target
@@ -718,7 +685,7 @@ class OAM(LowerAgents):
             # loss = np.sqrt(loss)
             value_loss_list.append(loss)
             # if n % 10 == 0:
-            print(f'Epoch: {n} Sample: {len(batch_reward)} Loss: {format(loss, ".3f")}')
+            print(f'Epoch: {n} Sample: {len(batch_reward)} Loss: {format(loss, ".3f")}' , end='\r')
 
         print(' ' * 24 + f'\rAvg loss: {np.mean(value_loss_list)}')
 
@@ -933,3 +900,39 @@ if False:
         network_mean_delay = -(tot_delay/tot_veh_num) 
 
         return network_mean_delay
+
+    def replay(self):
+        ''' OAM replay
+        '''
+        # print('############ before train ##############')
+        # W, target_W = self.critic.model.get_weights(), self.critic.target_model.get_weights()
+        # print('##Evaluate network')
+        # print(W)
+        # print('##Target network')
+        # print(target_W)       
+        
+        ## Sample experience from buffer
+        states, actions, rewards, dones, new_states, phase_matrix_batch, phase_mask_batch = self.buffer.sample_batch(self.batch_size)
+
+        ## obtain new action
+        max_q_index = self.get_action_batch(new_states, phase_matrix_batch, phase_mask_batch, True )
+
+        ## Predict target q-values using target networks
+        phase_value_target = self.critic.target_predict([new_states, phase_matrix_batch])
+
+        ## Predict original q_values
+        phase_value_old = self.critic.target_predict([new_states, phase_matrix_batch])
+
+        #print(self.actor.target_predict(new_states))
+        
+        ## check nan of Q values
+        if np.isnan(phase_value_target).any():
+            raise Exception('There is NaN in the q-value')
+
+        ## Compute critic target
+        critic_target = self.bellman(rewards, phase_value_old, phase_value_target, max_q_index, dones)
+        
+        ## Train both networks on sampled batch, update target networks
+        _, loss = self.update_models(states, phase_matrix_batch, critic_target)
+        
+        return loss
