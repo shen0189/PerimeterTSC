@@ -823,7 +823,7 @@ def plot_tsc_delay(config, tsc_all, e, n_jobs):
     sorted_tuples = sorted(delay.items(), key=lambda item: item[1])
     sort_delay = {k: v for k, v in sorted_tuples}
     plt.bar(sort_delay.keys(), sort_delay.values())
-    plt.ylim((0., 5))
+    plt.ylim((0., 10))
 
     # plt.legend()
     # plt.show()
