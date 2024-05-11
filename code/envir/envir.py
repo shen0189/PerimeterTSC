@@ -2,6 +2,7 @@ from copy import copy
 import sumolib
 import traci
 from utils.trafficsignalcontroller import TrafficSignalController
+from peritsc.perimeterdata import PeriSignals
 from utils.utilize import config, plot_MFD
 import numpy as np
 from envir.perimeter import Peri_Agent
@@ -12,9 +13,11 @@ from metric.metric import Metric
 import datetime
 import platform
 import time
+from typing import Dict
+from copy import deepcopy
 
 class Simulator():
-    def __init__(self, TrafficGen, netdata):
+    def __init__(self, TrafficGen, netdata, peridata):
         # self.min_green = config['min_green']
         # self.max_green = config['max_green']
         # self.states = config['states']
@@ -23,15 +26,24 @@ class Simulator():
         self.TrafficGen = TrafficGen
         self.state_steps = config['state_steps']
         self.netdata = netdata
+        self.peridata = peridata
 
         ''' -info_interval:  10 sec for data collection 
             -control_interval: 100sec for a new action
             -simulation_interval: 1sec for SUMO simulation
+            -peri_record_interval: 1sec for peri data collection
         '''
         self.control_interval = config['control_interval']
         self.info_interval = config['infostep']
 
         self.lower_mode = config['lower_mode']
+
+        ## Perimeter lane halting vehs, inflow, outflow
+        self.peri_halveh_step: Dict[str, list] = {}
+        self.peri_entered_step: Dict[str, list] = {}
+        self.peri_left_step: Dict[str, list] = {}
+        self.peri_laststep_entered_veh: Dict[str, list] = {}
+        self.peri_laststep_left_veh: Dict[str, list] = {}
 
     def simu_start(self, sumo_cmd):
         traci.start(sumo_cmd)
@@ -78,10 +90,10 @@ class Simulator():
         """ simulation with one lower level control interval
         """
 
-        self._step = step
+        self._step = step   # 当前仿真step
 
         ## 1. simulate yellow phase
-        if self.lower_mode != 'FixTime': 
+        if self.lower_mode != 'FixTime':
             self._set_phase('yellow', self.yellow_duration)
         self._simulate(int(self.yellow_duration))
 
@@ -146,13 +158,53 @@ class Simulator():
         for i in switch_greens:
             yellow_phase[i] = 'r'
         return ''.join(yellow_phase)
-    
+
+    def _get_peri_state(self):
+        '''
+        Update the halting vehicle, inflow, outflow of peri lanes at each step within one interval
+        '''
+        for signal_id, signal in self.peridata.peri_signals.items():
+            for lane_id, lane in signal.in_lanes.items():
+                hal_veh = traci.lane.getLastStepHaltingNumber(lane_id)
+                edge_id, lane_idx = lane_id.split('_')
+                if lane_id in self.peridata.peri_inflow_lanes_by_laneID:
+                    in_detector_id = edge_id + '00' + lane_idx + '_in'
+                else:
+                    in_detector_id = edge_id + lane_idx + '_in'
+                out_detector_id = edge_id + '00' + lane_idx + '_out'
+                entered_veh_list = traci.inductionloop.getLastStepVehicleIDs(in_detector_id)
+                left_veh_list = traci.inductionloop.getLastStepVehicleIDs(out_detector_id)
+                # check whether the vehicle has been recorded
+                entered_veh_num, left_veh_num = len(entered_veh_list), len(left_veh_list)
+                for veh_ID in entered_veh_list:
+                    if lane_id in self.peri_laststep_entered_veh:
+                        if veh_ID in self.peri_laststep_entered_veh[lane_id]:
+                            entered_veh_num -= 1
+                for veh_ID in left_veh_list:
+                    if lane_id in self.peri_laststep_left_veh:
+                        if veh_ID in self.peri_laststep_left_veh[lane_id]:
+                            left_veh_num -= 1
+                self.peri_laststep_entered_veh[lane_id] = entered_veh_list
+                self.peri_laststep_left_veh[lane_id] = left_veh_list
+                self.peri_halveh_step.setdefault(lane_id, []).append(hal_veh)
+                self.peri_entered_step.setdefault(lane_id, []).append(entered_veh_num)
+                self.peri_left_step.setdefault(lane_id, []).append(left_veh_num)
+
+    def _reset_peri_state(self):
+        '''
+        Reset the list of each peri lane after one interval
+        '''
+        self.peri_halveh_step = {lane_id: [] for lane_id in self.peri_halveh_step}
+        self.peri_entered_step = {lane_id: [] for lane_id in self.peri_entered_step}
+        self.peri_left_step = {lane_id: [] for lane_id in self.peri_left_step}
+
     def _simulate(self, num_step):
         # starttime = time.perf_counter()
 
         for _ in range(num_step):
             traci.simulationStep()
-            self._step  += 1
+            self._get_peri_state()
+            self._step += 1
         
         # endtime = time.perf_counter()
         # # endtime = datetime.datetime.now()
@@ -164,7 +216,15 @@ class Simulator():
 
     ### Env: action, reward, state
 
-
+    def get_peri_state_interval(self):
+        '''
+        return the peri lane info and reset the state record
+        '''
+        peri_info = {'halting': deepcopy(self.peri_halveh_step),
+                     'entered': deepcopy(self.peri_entered_step),
+                     'left': deepcopy(self.peri_left_step)}
+        self._reset_peri_state()
+        return peri_info
 
     def get_stacked_states(self):
         ''' obtain the stacked state of the controller: list as input to NN 
