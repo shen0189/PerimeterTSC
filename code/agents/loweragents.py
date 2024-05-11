@@ -5,18 +5,14 @@ import pickle
 # from code.utils.light_prepare import CAPACITY
 
 os.environ['TF_CPP_MIN_LOG_LEVEL']='3'  # kill warning about tensorflow
-import sys
 import numpy as np
 
 # from tqdm import tqdm
-from nn.actor import Actor
-from nn.critic import Critic, CriticLower
+from nn.critic import CriticLower
+from peritsc.perimeterdata import PeriSignals
 # from utils.stats import gather_stats
 # from utils.networks import tfSummary, OrnsteinUhlenbeckProcess
-from utils.memory_buffer import MemoryBuffer, MemoryBuffer_Lower
-from utils.utilize import config, plot_MFD, plot_last_critic_loss, plot_reward, plot_actions, plot_critic_loss, plot_throughput, \
-plot_q_value, plot_q_value_improve, plot_accu, plot_computime
-import timeit
+from utils.utilize import config, plot_last_critic_loss, plot_critic_loss
 import traci
 import datetime
 
@@ -26,15 +22,17 @@ today = datetime.datetime.today()
 class LowerAgents:
     """ A class of lower base agent
     """
-    def __init__(self, tsc, netdata):
+    def __init__(self, tsc, netdata, peridata: PeriSignals):
         """ Initialization
         """
         self.outputfile = config['lane_outputfile_dir']
+        self.queuefile = config['queuefile_dir']
 
         ## network config
         self.tsc = tsc
         self.netdata = netdata
-        self.perimeter_light = list(config['Peri_info'].keys())
+        self.peridata = peridata
+        self.perimeter_light = list(config['Peri_info'].keys()) + ['P0', 'P1', 'P2', 'P3']
         self.lower_mode = config['lower_mode']
         self.upper_mode = config['upper_mode']
         self.mode = config['mode']
@@ -362,7 +360,7 @@ class LowerAgents:
                 tsc.cur_phase_time = self.control_interval-self.yellow_duration
 
 ## metric
-    def get_metric_each_epis(self, lane_data):
+    def get_metric_each_epis(self, lane_data, queue_data: dict):
         ''' calculate metric of lower-level of each episode, the data is aggregated in 5 sec
             1. network level （all the nodes in the network）
                --1.1
@@ -438,6 +436,31 @@ class LowerAgents:
         
         ''' 3.6 "mean per_veh delay" of all steps of all controlled tsc (veh_delay per second)'''
         lower_metric['tsc_perveh_delay_mean'] = np.sum(tsc_delay_step_node)/np.sum(tsc_sampleSeconds_step_node)
+
+        ''' 4.1 peri intersection total throughput '''
+        peri_throughput_dict = {k: v for k, v in lane_data['ToNode_throughput_step'].items() if
+                                k in self.peridata.peri_nodes}
+        total_throughput = [sum(throughput_tuple) for throughput_tuple in zip(*peri_throughput_dict.values())]
+        total_throughput_progression = [sum(total_throughput[:i+1]) for i in range(len(total_throughput))]
+        lower_metric['peri_throughput'] = total_throughput_progression
+
+        ''' 4.2 peri inflow queue length (maximum queue length in one cycle) '''
+        lower_metric['peri_queue'] = queue_data
+
+        ''' 4.3 peri spillover times '''
+        threshold = 0.9
+        inflow_length_dict = {edgeID: self.peridata.peri_inflow_lanes_by_laneID[str(edgeID) + '_0'].length for edgeID in queue_data}
+        spillover_data = {
+            edgeID: [0 if queue / inflow_length_dict[edgeID] < threshold else 1 for queue in queue_data[edgeID]] for
+            edgeID in queue_data}
+        total_spillover_times = [sum(spillover_tuple) for spillover_tuple in zip(*spillover_data.values())]
+        spillover_times_progression = [sum(total_spillover_times[:i+1]) for i in range(len(total_spillover_times))]
+        lower_metric['peri_spillover'] = spillover_times_progression
+
+        ''' 4.4 peri average delay '''
+        peri_delay_dict = {k: v for k, v in lane_data['ToNode_delay_step'].items() if k in self.peridata.peri_nodes}
+        avg_delay = [sum(delay_tuple) / len(delay_tuple) for delay_tuple in zip(*peri_delay_dict.values())]
+        lower_metric['peri_delay'] = avg_delay
 
         return lower_metric
 
@@ -696,8 +719,8 @@ class OAM(LowerAgents):
 
 
 class MaxPressure(LowerAgents):
-    def __init__(self, tsc, netdata):
-        super().__init__(tsc, netdata)
+    def __init__(self, tsc, netdata, peridata):
+        super().__init__(tsc, netdata, peridata)
 
     def get_state(self):
         batch_state = []
