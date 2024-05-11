@@ -8,12 +8,12 @@ import matplotlib
 from utils.utilize import plot_accu_critic
 
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 from agents.loweragents import OAM, FixTime, MaxPressure
 from agents.upperagents import DDPG, DQN, Expert, Static, C_DQN, MFD_PI
 from utils.networkdata import NetworkData
-from utils.utilize import Test, config, plot_lower_reward_epis,  save_config, save_data_train_upper, set_sumo, plot_MFD, plot_actions, plot_critic_loss, plot_throughput, \
- plot_accu, plot_computime, set_train_path, write_log, plot_obj_reward_penalty, set_test_path
+from peritsc.perimeterdata import PeriSignals
+from utils.utilize import Test, config, plot_lower_reward_epis,  save_config, save_data_train_upper, set_sumo, plot_MFD, plot_actions, \
+    plot_accu, plot_computime, set_train_path, write_log, plot_obj_reward_penalty, set_test_path
 import timeit
 from time import time
 import random
@@ -85,7 +85,7 @@ def simulate_one_episode_train(e, config, netdata, accu_crit = None):
         route_file_name = trafficGen.route_file_name.split('/')
         route_file_name[1] += str(e % n_jobs + 1)
         trafficGen.route_file_name = '/'.join(route_file_name)
-    env = Simulator(trafficGen, netdata)
+    env = Simulator(trafficGen, netdata, peridata)
 
     trainer = Trainer (env, agent_lower, agent_upper, sumo_cmd_e, e, n_jobs, config)
     
@@ -226,7 +226,7 @@ def train():
         agent_lower.save_weights(config['models_path_name'])
 
         ## 11. upper fit mfd
-        if agent_upper.peri_mode == 'C_DQN' and agent_upper.mode == 'train' :
+        if agent_upper.peri_mode == 'C_DQN' and agent_upper.mode == 'train':
             agent_upper.fit_mfd(accu_batch, flow_batch)
             ncrit, Gneq = agent_upper.cal_ncritic()
             agent_upper.update_ncritic(ncrit)
@@ -294,6 +294,7 @@ def test():
         tester.save_data_test()
     return results
 
+# not used
 def simulate_one_episode_test(e, config):
     ''' simulation with one episode  *** Multiple process ***
         *** 1. Parallel: This is the simulation being 'paralleled'
@@ -424,7 +425,8 @@ def simulate_one_episode_test(e, config):
     cumul_obj = cumul_reward + cumul_penalty
 
     print(f"\r\n###### total reward of episode {e+1}: {cumul_obj}")
-    plot_actions(config, env.Perimeter.green_time, action_excute_list, e,  agent.action_type)
+    plot_actions(config, env.Perimeter.green_time, action_excute_list, e,  agent.action_type,
+                 env.Perimeter.inflow_movements)
     plot_MFD(config, accu_episode, throughput_episode, env.cycle_time, e, config['Peri_mode'], cumul_obj)
     plot_accu(config, accu_episode, throughput_episode, env.Metric.halveh_buffer_list_epis, e)
 
@@ -441,27 +443,33 @@ nd = NetworkData(config['netfile_dir'], sumo_cmd)
 netdata = nd.get_net_data()
 tsc, tsc_peri = nd.update_netdata()
 
+# initialize perimeter signals
+peridata = PeriSignals(config['netfile_dir'], sumo_cmd)
+peridata.get_basic_inform()
+peridata.get_conflict_matrix()
+# peridata.check_conflict_matrix()
+
 ## 3. init envir
-Env = Simulator(TrafficGen, netdata)
+Env = Simulator(TrafficGen, netdata, peridata)
 
 ## 4. initialize tsc controller (upper/lower)
 # upper
 if config['upper_mode'] == 'DDPG':
     # DDPG controller
-    Agent_upper = DDPG(tsc_peri, netdata)
+    Agent_upper = DDPG(tsc_peri, netdata, peridata)
 
 elif config['upper_mode'] == 'DQN': 
     # DQN controller
-    Agent_upper = DQN(tsc_peri, netdata)
+    Agent_upper = DQN(tsc_peri, netdata, peridata)
 elif config['upper_mode'] == 'Expert' :
-    Agent_upper = Expert(tsc_peri, netdata)
+    Agent_upper = Expert(tsc_peri, netdata, peridata)
 elif config['upper_mode'] == 'C_DQN' :
-    Agent_upper = C_DQN(tsc_peri, netdata)
+    Agent_upper = C_DQN(tsc_peri, netdata, peridata)
 elif config['upper_mode'] == 'PI' :
-    Agent_upper = MFD_PI(tsc_peri, netdata)
+    Agent_upper = MFD_PI(tsc_peri, netdata, peridata)
 # elif config['upper_mode'] == 'Static' :
 else:
-    Agent_upper = Static(tsc_peri, netdata)
+    Agent_upper = Static(tsc_peri, netdata, peridata)
 
 
 # lower
@@ -470,7 +478,7 @@ if config['lower_mode'] == 'OAM':
 elif config['lower_mode'] == 'FixTime':
     Agent_lower = FixTime(tsc, netdata)
 elif config['lower_mode'] == 'MaxPressure':
-    Agent_lower = MaxPressure(tsc, netdata)
+    Agent_lower = MaxPressure(tsc, netdata, peridata)
 
 
 
@@ -479,7 +487,7 @@ elif config['lower_mode'] == 'MaxPressure':
 
 if __name__ == "__main__":
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    mp.set_start_method('spawn')
+    mp.set_start_method('spawn')    # fork
     ## train / test the controller
     # if config['mode'] == 'test':
     if False:
@@ -494,6 +502,7 @@ if __name__ == "__main__":
         test()
     else:
         config['plots_path_name'], config['models_path_name'] = set_train_path(config['plots_path_name'], 'plot')
+        config['stats_path_name'] = set_train_path(config['stats_path_name'], 'stats')
         config['cache_path_name'] = set_test_path(config['cache_path_name'])
         
         ## save config file and log file
