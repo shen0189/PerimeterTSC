@@ -1,20 +1,14 @@
 from bisect import bisect
 import datetime
-from utils.utilize import config, plot_MFD, plot_critic_loss_cur_epis, plot_flow_MFD, plot_last_critic_loss, plot_reward, plot_actions, plot_critic_loss, plot_throughput, \
-    plot_q_value, plot_q_value_improve, plot_accu, plot_computime
-from utils.memory_buffer import MemoryBuffer, MemoryBuffer_Upper
-from nn.critic import Critic, CriticUpper
+from utils.utilize import config, plot_critic_loss_cur_epis, plot_last_critic_loss, plot_critic_loss, plot_q_value, plot_q_value_improve
+from utils.memory_buffer import MemoryBuffer_Upper
+from peritsc.perimeterdata import PeriSignals
+from nn.critic import CriticUpper
 from nn.actor import Actor
 import scipy.optimize as opt
 import numpy as np
-from matplotlib.cbook import flatten
-from keras.backend.common import epsilon
-import sys
 import os
-from re import X
-from matplotlib import pyplot as plt
 
-from numpy.core.shape_base import hstack
 from metric.metric import Metric
 from envir.perimeter import Peri_Agent
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # kill warning about tensorflow
@@ -30,11 +24,12 @@ class UpperAgents:
     """ A class of upper base agent
     """
 
-    def __init__(self, tsc_peri, netdata):
+    def __init__(self, tsc_peri, netdata, peridata: PeriSignals):
         """ Initialization
         """
         self.outputfile = config['edge_outputfile_dir']
         self.netdata = netdata
+        self.peridata = peridata
         self.PN_road_length_tot, self.PN_edge_length = self._get_PN_road_length()
 
         # mode
@@ -69,13 +64,15 @@ class UpperAgents:
         else:  # for RL
             self.states = config['states']
         self.env_dim = self._get_env_dim()
+        self.peri_states = {}       # state of perimeter lanes
 
         # record
         self.metric_list = ['cul_obj', 'cul_reward', 'cul_penalty',
                             'upper_reward_epis', 'upper_penalty_epis',
                             'accu', 'speed', 'flow', 'TTD', 'PN_waiting', 'peri_entered_vehs',
                             'density_heter_PN', 'peri_waiting_mean', 'peri_waiting_tot']
-
+        self.ordered_action = []
+        self.estimated_inflow = []
         self.record_epis = {}
         for key in self.metric_list:
             self.record_epis[key] = []
@@ -109,7 +106,7 @@ class UpperAgents:
 
         # perimeter
         self.tsc_peri = tsc_peri
-        self.perimeter = Peri_Agent(self.tsc_peri)
+        self.perimeter = Peri_Agent(self.tsc_peri, self.peridata)
 
         self.accu_crit = None
 
@@ -117,7 +114,7 @@ class UpperAgents:
         ''' reset upper agent
         '''
         # perimeter
-        self.perimeter = Peri_Agent(self.tsc_peri)
+        self.perimeter = Peri_Agent(self.tsc_peri, self.peridata)
         self.peri_num = len(self.perimeter.info)
         self.info_update_index = 0
         self.perimeter.buffer_wait_vehs_tot = np.zeros(1)
@@ -129,6 +126,8 @@ class UpperAgents:
         self.cumul_reward, self.cumul_penalty = 0, 0
         # self.action_excute_list = []
         # self.reward_epis, self.penalty_epis = [], []
+        self.ordered_action = []
+        self.estimated_inflow = []
 
         # init state
         self.old_state = [0] * self.env_dim
@@ -234,14 +233,22 @@ class UpperAgents:
         # 1. get action
         self.a, is_expert = self.get_action_all(self.old_state)
 
-        # 2.action coordination
-        a = self._action_coordinate_transformation(self.max_green, self.a)
+        # 2.action coordination (a in veh)
+        # a = self._action_coordinate_transformation(self.max_green, self.a)
+        # transform a from veh/h to number of vehicles
+        # a = self.a / 3600 * config['cycle_time']
+        a = self.a
+        print("Inflow given by PI controller: ", a)
+        self.ordered_action.append(a)
 
         # 3. assign the vehicle to each perimeter and obtain the phase duration
-        green_time, red_time = self.perimeter.get_greensplit(a, step)
+        # green_time, red_time = self.perimeter.get_greensplit(a, step)
+        estimate_inflow = self.perimeter.get_full_greensplit(a, self.peri_states)
+        self.estimated_inflow.append(estimate_inflow)
 
         # 4. set program
-        self.perimeter.set_program(green_time, red_time)
+        # self.perimeter.set_program(green_time, red_time)
+        self.perimeter.set_full_program()
 
     def get_action_all(self, old_state):
         ''' get action of upper level with different controllers
@@ -489,6 +496,7 @@ class UpperAgents:
         # flow2
         flow_epis = np.mean(
             edge_data['speed'] * edge_data['density'] * 3.6, axis=1)  # veh/h
+        flow_epis = self._fill_metric_values(flow_epis)
         metric['flow'] = flow_epis
         # flow 3 bad
         # TTD = accu * mean_speed* 100  # nveh*m/sec*sec = veh*m
@@ -498,6 +506,7 @@ class UpperAgents:
         # accu
         accu_epis = np.sum(
             (edge_data['sampledSeconds'] / self.info_interval), axis=1)
+        accu_epis = self._fill_metric_values(accu_epis)
         metric['accu'] = accu_epis
 
         '''speed'''
@@ -505,26 +514,31 @@ class UpperAgents:
         weighted_speed = np.multiply(edge_data['speed'], np.array(
             self.PN_edge_length)[:, np.newaxis].T)
         speed_epis = np.sum(weighted_speed, axis=1)/sum(self.PN_edge_length)
+        speed_epis = self._fill_metric_values(speed_epis)
         metric['speed'] = speed_epis
 
         '''TTD'''
         # Total travel distance
         TTD_epis = np.sum(edge_data['sampledSeconds']
                           * edge_data['speed'], axis=1)/1e3  # (km)
+        TTD_epis = self._fill_metric_values(TTD_epis)
         metric['TTD'] = TTD_epis
 
         '''waiting_time'''
         # PN waiting time
         PN_waiting_epis = np.sum(edge_data['PN_waiting'], axis=1)
+        PN_waiting_epis = self._fill_metric_values(PN_waiting_epis)
         metric['PN_waiting'] = PN_waiting_epis
 
         '''entered_vehs'''
         peri_entered_vehs = np.sum(edge_data['peri_entered_vehs'], axis=1)
-        if len(peri_entered_vehs) < len(metric['flow']):
-            len_short = len(metric['flow']) - len(peri_entered_vehs)
-            peri_entered_vehs = np.concatenate(
-                [peri_entered_vehs, np.zeros(len_short)])
+        peri_entered_vehs = self._fill_metric_values(peri_entered_vehs)
         metric['peri_entered_vehs'] = peri_entered_vehs
+
+        ''' outflow vehs '''
+        peri_outflow_vehs = np.sum(edge_data['peri_outflow_vehs'], axis=1)
+        peri_outflow_vehs = self._fill_metric_values(peri_outflow_vehs)
+        metric['peri_outflow_vehs'] = peri_outflow_vehs
 
         ''' PN density heterogenity'''
         density_PN = edge_data['density']/300
@@ -550,6 +564,11 @@ class UpperAgents:
         # tot waiting time for each perimeter
         metric['peri_waiting_tot'] = edge_data['peri_waiting_tot']
 
+        ''' Ordered inflow '''
+        metric['ordered_inflow'] = self.ordered_action
+
+        ''' Estimated inflow by signal control model '''
+        metric['estimated_inflow'] = self.estimated_inflow
 
         return metric
 
@@ -669,7 +688,13 @@ class UpperAgents:
         """
         self.buffer.memorize(state, action, reward, done, new_state, penalty)
 
-
+    def _fill_metric_values(self, metric_field):
+        if len(metric_field) < len(self.estimated_inflow):
+            len_short = len(self.estimated_inflow) - len(metric_field)
+            complete_field = np.concatenate([np.zeros(len_short), metric_field])
+        else:
+            complete_field = metric_field
+        return complete_field
 
 
 class DQN(UpperAgents):
@@ -1243,8 +1268,8 @@ class MFD_PI(UpperAgents):
          Reference: Keyven-Ekbatani et.al 2019      
     '''
 
-    def __init__(self, tsc_peri, netdata):
-        super().__init__(tsc_peri, netdata)
+    def __init__(self, tsc_peri, netdata, peridata: PeriSignals):
+        super().__init__(tsc_peri, netdata, peridata)
 
         # controller settings
         self.accu_crit = config['accu_critic']  # set-point for the controller
@@ -1255,15 +1280,18 @@ class MFD_PI(UpperAgents):
         self.q_record = [] # record of actions
         self.accu_last = 0
 
-        # the maximum inflow of the network each step
-        self.q_max = config['flow_rate'] * \
-            self.max_green * len(config['Peri_info'])
+        # the maximum inflow of the network each step (veh/h)
+        # self.q_max = config['saturation_flow_rate'] * \
+        #     self.max_green * len(peridata.peri_inflow_lanes)
+        self.q_max = config['saturation_flow_rate'] * config['max_green'] * len(peridata.peri_inflow_lanes)
+        self.q_min = config['saturation_flow_rate'] * config['min_green'] * len(peridata.peri_inflow_lanes)
 
     def get_action(self, s):
         ''' PI control using keyvan-Ekbatani 2019, Page8, Eq 10
         '''
         # 1. get states
-        accu = s[0] * config['accu_max']   # current accu
+        accu = s[0] * config['accu_max']   # current accu (veh)
+        print(f'The Network has {accu} vehicles currently')
 
         # 2.calculate control
         a = self.q_last - self.K_p * \
@@ -1271,7 +1299,7 @@ class MFD_PI(UpperAgents):
 
         # 3. inflow constraints
         a = min(a, self.q_max)
-        a = max(a, 0)
+        a = max(a, self.q_min)
 
         # 4. update and record
         self.q_last = a  # update the inflow
