@@ -9,6 +9,8 @@ from collections import deque
 import sys, subprocess, os
 from itertools import product
 import pandas as pd
+from typing import Dict
+from peritsc.perimeterdata import PeriSignals
 
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -19,10 +21,12 @@ else:
 
 class Metric():
     def __init__(self, control_interval, info_interval, netdata):
-        assert control_interval%info_interval==0, 'the info_interval in incorrect'
+        assert control_interval%info_interval==0, 'the info_interval is incorrect'
         self.info_length = int(control_interval/info_interval) + 1
         self.netdata = netdata
         self.peri_controlled_links = [peri['edge'] for peri in config['Peri_info'].values()]
+        self.peri_outflow_links = [peri['external_out_edges'] for peri in config['Peri_info'].values()]
+        self.peri_outflow_links = sum(self.peri_outflow_links, [])
         self.sumo_tools_path = tools
 
         self.edge_buffer = self._get_buffer_edges()
@@ -42,8 +46,11 @@ class Metric():
         ## throuput
         self.throuput_list_epis = []
         self.throuput_list_interval = deque([0], maxlen=self.info_length-1) # summation: each control interval
-        # self.throuput_list_interval = [] 
-        
+        # self.throuput_list_interval = []
+
+        ## Perimeter intersection total throughput
+        self.peri_throughput_epis = []
+
         ## PN mean speed
         self.meanspeed_list_epis = []
         # self.meanspeed_list_interval = deque([0], maxlen=self.info_length) # each control interval
@@ -123,8 +130,8 @@ class Metric():
         self.accu_PN_list_epis.append(accu_onestep_PN)
         self.accu_buffer_list_epis.append(accu_onestep_buffer)
         self.halveh_PN_list_epis.append(halt_vehs_PN)       
-        self.halveh_buffer_list_epis.append(halt_vehs_buffer)      
-    
+        self.halveh_buffer_list_epis.append(halt_vehs_buffer)
+
     def get_PN_speed_production(self, info_inter_flag=False):
         ''' obtain PN mean_speed & production 
         --- info_inter_flag = True: return the instant value: last value of info interval
@@ -182,6 +189,7 @@ class Metric():
 ## process vehs
     def process_output(self, ouputdir, index=0):
         ''' read the output file 'edg.xml', obtain the data of each edge in the last simulation step
+        (not used)
         '''
         # 1. add the end tag of the xml file, so that it can be opened
         with open(ouputdir, "rb") as file:
@@ -281,7 +289,7 @@ class Metric():
         ## read csv
         # df = pd.read_csv(file, sep=';')
         df = pd.read_csv(file, sep=';', usecols=\
-            ['edge_id','interval_end','edge_sampledSeconds',\
+            ['edge_id', 'interval_end', 'edge_sampledSeconds', 'edge_entered', \
                 'edge_density','edge_speed', 'edge_waitingTime', 'edge_left'])
 
         ## fill nan
@@ -291,26 +299,39 @@ class Metric():
         df_PN = df[df['edge_id'].isin(config['Edge_PN'])]
         df_buffer = df[df['edge_id'].isin(self.edge_buffer)]
         df_peri = df[df['edge_id'].isin(self.peri_controlled_links)]
+        df_peri_out = df[df['edge_id'].isin(self.peri_outflow_links)]       # TODO: 对非单一出口道情况可能不适用
 
         edge_data = {}
         ''' PN data'''
         ## sampledSeconds
         edge_sampledSeconds = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_sampledSeconds']].set_index('edge_id').T)
+        # 检查无数据的edge
+        recorded_edge = list(edge_sampledSeconds.columns)
+        missing_edge = []
+        for edge in config['Edge_PN']:
+            if edge not in recorded_edge:
+                missing_edge.append(edge)
+        # 补全edge
+        edge_sampledSeconds = pd.concat([edge_sampledSeconds, pd.DataFrame(columns=missing_edge)], sort=False)
+        # 补充缺失值
         edge_sampledSeconds = edge_sampledSeconds.fillna(1e-5)
         edge_data['sampledSeconds'] = edge_sampledSeconds.to_numpy()
 
         ## density
         edge_density = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_density']].set_index('edge_id').T)
+        edge_density = pd.concat([edge_density, pd.DataFrame(columns=missing_edge)], sort=False)
         edge_density = edge_density.fillna(1e-5)
         edge_data['density'] = edge_density.to_numpy()
         
         ## speed
         edge_speed = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_speed']].set_index('edge_id').T)
+        edge_speed = pd.concat([edge_speed, pd.DataFrame(columns=missing_edge)], sort=False)
         edge_speed = edge_speed.fillna(13.89)
         edge_data['speed'] = edge_speed.to_numpy()
         
         ## waiting time
         edge_waitingTime = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_waitingTime']].set_index('edge_id').T)
+        edge_waitingTime = pd.concat([edge_waitingTime, pd.DataFrame(columns=missing_edge)], sort=False)
         edge_waitingTime = edge_waitingTime.fillna(1e-5)
         edge_data['PN_waiting'] = edge_waitingTime.to_numpy()
             
@@ -329,7 +350,18 @@ class Metric():
         ## get perimeter entered vehs
         peri_entered_vehs = df_peri.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_left']].set_index('edge_id').T)
         peri_entered_vehs = peri_entered_vehs.fillna(1e-5)
+        # # TODO: 补充流量为0的数据
+        # first_recorded_interval_end = int(peri_entered_vehs.index[0])
+        # new_interval_end = 100
+        # while new_interval_end < first_recorded_interval_end:
+        #     new_record =
+        #     peri_entered_vehs = pd.concat()
         edge_data['peri_entered_vehs'] = peri_entered_vehs.to_numpy()
+
+        ## get perimeter left vehs
+        peri_outflow_vehs = df_peri_out.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_entered']].set_index('edge_id').T)
+        peri_outflow_vehs = peri_outflow_vehs.fillna(1e-5)
+        edge_data['peri_outflow_vehs'] = peri_outflow_vehs.to_numpy()
 
         ## get perimeter waiting times
         # total waiting time on each perimeter links
@@ -421,9 +453,53 @@ class Metric():
             ToNode_sampledSeconds_dict[col] = df_sampledSeconds1[col].to_numpy()
 
         lane_data['ToNode_sampledSeconds_step'] = ToNode_sampledSeconds_dict
-        
-   
+
+
         return lane_data
+
+    def process_queue_output(self, file):
+        """
+        return the queue info of peri inflows
+        0426更新: 选择采用周期内最大排队长度，相对来说更准确
+        """
+        step = config['cycle_time']      # 采集一个周期的平均排队长度
+
+        ## set file name as csv
+        file = file.split('.')
+        file = '.'.join([file[0], 'csv'])
+
+        # read csv and get base dataframe (two columns: interval and lane_id)
+        df = pd.read_csv(file, sep=';', usecols=['data_timestep', 'lane_id', 'lane_queueing_length'])
+        df_interval = df[df['data_timestep'] % step == 0]['data_timestep'].drop_duplicates()
+        df_edge = pd.DataFrame(self.peri_controlled_links, columns=['edge_id']).squeeze()
+        df_base = pd.DataFrame(product(df_interval, df_edge), columns=['interval', 'edge_id'])
+
+        # process the csv
+        df = df[df['lane_id'].notna()]      # 删除没有信息的行
+        df = df[df['lane_id'].str[0] != ":"]        # 删除内部lane
+        df['edge_id'] = df['lane_id'].str.split('_').str[0].astype(int)
+        df_peri = df[df['edge_id'].isin(self.peri_controlled_links)]
+        df_peri = df_peri.fillna(0.)
+        # Case 1: get the queue length of the end of each interval (not used)
+        # df_peri_interval_end = df_peri[df_peri['data_timestep'] % step == 0]
+        # Case 2: get the maximum queue length within each interval
+        df_peri['interval'] = df_peri['data_timestep'] // 100 * 100
+        df_peri_max_queue = df_peri.groupby([df_peri['interval'], df_peri['edge_id']])['lane_queueing_length'].max()
+
+        # generate the dataframe
+        df_peri_full = pd.merge(df_base, df_peri_max_queue, on=['interval', 'edge_id'], how='left')
+        df_peri_full = df_peri_full.fillna(0.)
+        # df_queue = df_peri_full.groupby(['data_timestep', 'edge_id'])['lane_queueing_length'].mean()
+        df_queue = df_peri_full.reset_index()
+
+        queue_data = {}
+        # get the queue length of each peri inflow edge
+        for edge in self.peri_controlled_links:
+            queue_list = list(df_queue[df_queue['edge_id'] == edge]['lane_queueing_length'])
+            queue_data[edge] = queue_list
+
+        return queue_data
+
 
 ## helper funcs
     def _get_buffer_edges(self):
