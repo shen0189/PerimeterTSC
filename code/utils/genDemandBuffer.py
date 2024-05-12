@@ -30,8 +30,8 @@ class TrafficGenerator():
 
             for DemandType in self.demand_config:
 
-                FrRegion_Node = config['Node'][DemandType['FromRegion']]
-                ToRegion_Node = config['Node'][DemandType['ToRegion']]
+                FrRegion_Node = DemandType['FromRegion']
+                ToRegion_Node = DemandType['ToRegion']
 
                 ### 1. obtain OD pairs
                 OD_PairsEdge, OD_PairsNode = self.get_randOD(FrRegion_Node, ToRegion_Node) 
