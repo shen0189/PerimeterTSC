@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2022-05-20 15:37:06 by Eclipse SUMO netedit Version 1.10.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <sumo-net-file value="D:\OneDrive%20-%20City%20University%20of%20Hong%20Kong\Research%20in%20CityU\Code\SUMO_MFD\Bilevel_Network_3.0\network\Bloomsbury\Bloomsbury.net.xml"/>
+    </input>
+
+    <output>
+        <output-file value="D:\OneDrive%20-%20City%20University%20of%20Hong%20Kong\Research%20in%20CityU\Code\SUMO_MFD\Bilevel_Network_3.0\network\Bloomsbury\Bloomsbury.net.xml"/>
+    </output>
+
+    <processing>
+        <geometry.min-radius.fix.railways value="false"/>
+        <geometry.max-grade.fix value="false"/>
+        <offset.disable-normalization value="true"/>
+        <lefthand value="false"/>
+    </processing>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+        <junctions.corner-detail value="5"/>
+        <junctions.limit-turn-speed value="5.5"/>
+        <rectangular-lane-cut value="false"/>
+    </junctions>
+
+    <pedestrian>
+        <walkingareas value="false"/>
+    </pedestrian>
+
+    <report>
+        <aggregate-warnings value="5"/>
+    </report>
+
+</configuration>
+-->
+
+<additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+    <tlLogic id="B4" type="static" programID="0" offset="0">
+        <phase duration="30" state="GGGGggrrrrrrGrrrrrGrrrrr"/>
+        <phase duration="5" state="yyyyyyGrrrrrGrrrrrGrrrrr"/>
+        <phase duration="30" state="GrrrrrGGGGggGrrrrrGrrrrr"/>
+        <phase duration="5" state="GrrrrryyyyyyGrrrrrGrrrrr"/>
+        <phase duration="30" state="GrrrrrGrrrrrGGGGggGrrrrr"/>
+        <phase duration="5" state="GrrrrrGrrrrrGyyyyyGrrrrr"/>
+        <phase duration="30" state="GrrrrrGrrrrrGrrrrrGGGGgg"/>
+        <phase duration="5" state="GrrrrrGrrrrrGrrrrrGyyyyy"/>
+    </tlLogic>
+</additional>
