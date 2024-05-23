@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2024-04-23 16:11:40 by Eclipse SUMO netedit Version 1.18.0
+<!-- generated on 2024-05-22 23:22:20 by Eclipse SUMO netedit Version 1.18.0
 -->
 
 <additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
-    <edgeData id="EdgeMesurements" file="../../measurements/GridBufferNew/EdgeMesurements.xml" freq="100.00" excludeEmpty='True' />
-    <edgeData id="EdgeMesurements_lower" file="../../measurements/GridBufferNew/EdgeMesurements_lower.xml" freq="5.00" excludeEmpty='True' />
-    <!-- <laneData  id="LaneMesurements" file="../../measurements/GridBufferNew/LaneMesurements.xml" freq="10.00" excludeEmpty='False' /> -->
     <!-- Detectors -->
     <inductionLoop id="0000_in" lane="0_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="0000_out" lane="0_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
@@ -510,136 +507,94 @@
     <inductionLoop id="79002_in" lane="79_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="79002_out" lane="79_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="80000_in" lane="80_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="80000_out" lane="80_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="80000_out" lane="80_0" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="80001_in" lane="80_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="80001_out" lane="80_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="80001_out" lane="80_1" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="80002_in" lane="80_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="80002_out" lane="80_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="80002_out" lane="80_2" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="8000_in" lane="8_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="8000_out" lane="8_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="8001_in" lane="8_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="8001_out" lane="8_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="8002_in" lane="8_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="8002_out" lane="8_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="800_in" lane="80_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="801_in" lane="80_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="802_in" lane="80_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="80_in" lane="8_0" pos="250.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="81000_in" lane="81_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="81000_out" lane="81_0" pos="485.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="81000_out" lane="81_0" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="81001_in" lane="81_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="81001_out" lane="81_1" pos="485.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="81001_out" lane="81_1" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="81002_in" lane="81_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="81002_out" lane="81_2" pos="485.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="81002_out" lane="81_2" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="81_in" lane="8_1" pos="250.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="82000_in" lane="82_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="82000_out" lane="82_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="82000_out" lane="82_0" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="82001_in" lane="82_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="82001_out" lane="82_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="82001_out" lane="82_1" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="82002_in" lane="82_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="82002_out" lane="82_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="82002_out" lane="82_2" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="820_in" lane="82_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="821_in" lane="82_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="822_in" lane="82_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="82_in" lane="8_2" pos="250.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="83000_in" lane="83_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="83000_out" lane="83_0" pos="485.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="83000_out" lane="83_0" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="83001_in" lane="83_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="83001_out" lane="83_1" pos="485.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="83001_out" lane="83_1" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="83002_in" lane="83_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="83002_out" lane="83_2" pos="485.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="83002_out" lane="83_2" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="84000_in" lane="84_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="84000_out" lane="84_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="84000_out" lane="84_0" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="84001_in" lane="84_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="84001_out" lane="84_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="84001_out" lane="84_1" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="84002_in" lane="84_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="84002_out" lane="84_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="84002_out" lane="84_2" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="840_in" lane="84_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="841_in" lane="84_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="842_in" lane="84_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="85000_in" lane="85_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="85000_out" lane="85_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="85000_out" lane="85_0" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="85001_in" lane="85_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="85001_out" lane="85_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="85001_out" lane="85_1" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="85002_in" lane="85_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="85002_out" lane="85_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="85002_out" lane="85_2" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="86000_in" lane="86_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="86000_out" lane="86_0" pos="485.39" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="86000_out" lane="86_0" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="86001_in" lane="86_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="86001_out" lane="86_1" pos="485.39" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="86001_out" lane="86_1" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="86002_in" lane="86_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="86002_out" lane="86_2" pos="485.39" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="86002_out" lane="86_2" pos="985.50" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="860_in" lane="86_0" pos="485.39" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="861_in" lane="86_1" pos="485.39" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="862_in" lane="86_2" pos="485.39" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="87000_in" lane="87_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="87000_out" lane="87_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="87000_out" lane="87_0" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="87001_in" lane="87_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="87001_out" lane="87_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="87001_out" lane="87_1" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="87002_in" lane="87_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="87002_out" lane="87_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="88000_in" lane="88_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="88000_out" lane="88_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="88001_in" lane="88_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="88001_out" lane="88_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="88002_in" lane="88_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="88002_out" lane="88_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="89000_in" lane="89_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="89000_out" lane="89_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="89001_in" lane="89_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="89001_out" lane="89_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="89002_in" lane="89_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="89002_out" lane="89_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="90000_in" lane="90_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="90000_out" lane="90_0" pos="485.42" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="90001_in" lane="90_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="90001_out" lane="90_1" pos="485.42" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="90002_in" lane="90_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="90002_out" lane="90_2" pos="485.42" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="9000_in" lane="9_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="9000_out" lane="9_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="9001_in" lane="9_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="9001_out" lane="9_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="9002_in" lane="9_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="9002_out" lane="9_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="91000_in" lane="91_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="91000_out" lane="91_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="91001_in" lane="91_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="91001_out" lane="91_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="91002_in" lane="91_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="91002_out" lane="91_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="92000_in" lane="92_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="92000_out" lane="92_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="92001_in" lane="92_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="92001_out" lane="92_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="92002_in" lane="92_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="92002_out" lane="92_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="93000_in" lane="93_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="93000_out" lane="93_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="93001_in" lane="93_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="93001_out" lane="93_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="93002_in" lane="93_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="93002_out" lane="93_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="94000_in" lane="94_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="94000_out" lane="94_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="94001_in" lane="94_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="94001_out" lane="94_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="94002_in" lane="94_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="94002_out" lane="94_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="95000_in" lane="95_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="95000_out" lane="95_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="95001_in" lane="95_1" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="95001_out" lane="95_1" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="95002_in" lane="95_2" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <inductionLoop id="95002_out" lane="95_2" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_0" lane="81_0" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_1" lane="81_2" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <inductionLoop id="87002_out" lane="87_2" pos="985.40" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_0" lane="80_0" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_1" lane="80_2" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_10" lane="3_1" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_11" lane="3_2" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_12" lane="90_2" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_13" lane="90_1" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_14" lane="90_0" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_12" lane="86_2" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_13" lane="86_1" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_14" lane="86_0" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_15" lane="49_0" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_16" lane="49_1" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_17" lane="49_2" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_18" lane="35_0" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_19" lane="35_1" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_2" lane="81_1" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_2" lane="80_1" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_20" lane="35_2" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_21" lane="15_0" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_22" lane="15_1" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_23" lane="15_2" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_24" lane="86_0" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_25" lane="86_1" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_26" lane="86_2" pos="15.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_24" lane="84_0" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_25" lane="84_1" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_26" lane="84_2" pos="515.00" length="450.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_27" lane="76_0" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_28" lane="76_1" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_29" lane="76_2" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
@@ -650,9 +605,9 @@
     <laneAreaDetector id="e2_33" lane="71_0" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_34" lane="71_1" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_35" lane="71_2" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_36" lane="83_1" pos="15.00" length="450.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_37" lane="83_0" pos="15.00" length="450.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
-    <laneAreaDetector id="e2_38" lane="83_2" pos="15.00" length="450.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_36" lane="82_1" pos="515.00" length="450.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_37" lane="82_0" pos="515.00" length="450.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
+    <laneAreaDetector id="e2_38" lane="82_2" pos="515.00" length="450.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_39" lane="30_0" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_4" lane="20_1" pos="250.00" length="215.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <laneAreaDetector id="e2_40" lane="30_1" pos="250.00" length="215.00" period="300.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
