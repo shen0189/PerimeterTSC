@@ -167,10 +167,7 @@ class Simulator():
             for lane_id, lane in signal.in_lanes.items():
                 hal_veh = traci.lane.getLastStepHaltingNumber(lane_id)
                 edge_id, lane_idx = lane_id.split('_')
-                if lane_id in self.peridata.peri_inflow_lanes_by_laneID:
-                    in_detector_id = edge_id + '00' + lane_idx + '_in'
-                else:
-                    in_detector_id = edge_id + lane_idx + '_in'
+                in_detector_id = edge_id + lane_idx + '_in'
                 out_detector_id = edge_id + '00' + lane_idx + '_out'
                 entered_veh_list = traci.inductionloop.getLastStepVehicleIDs(in_detector_id)
                 left_veh_list = traci.inductionloop.getLastStepVehicleIDs(out_detector_id)
