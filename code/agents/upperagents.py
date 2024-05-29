@@ -1,6 +1,7 @@
 from bisect import bisect
 import datetime
-from utils.utilize import config, plot_critic_loss_cur_epis, plot_last_critic_loss, plot_critic_loss, plot_q_value, plot_q_value_improve
+from utils.utilize import config
+from utils.result_processing import plot_critic_loss_cur_epis, plot_last_critic_loss, plot_critic_loss, plot_q_value, plot_q_value_improve
 from utils.memory_buffer import MemoryBuffer_Upper
 from peritsc.perimeterdata import PeriSignals
 from nn.critic import CriticUpper

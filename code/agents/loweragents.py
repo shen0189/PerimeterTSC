@@ -12,7 +12,8 @@ from nn.critic import CriticLower
 from peritsc.perimeterdata import PeriSignals
 # from utils.stats import gather_stats
 # from utils.networks import tfSummary, OrnsteinUhlenbeckProcess
-from utils.utilize import config, plot_last_critic_loss, plot_critic_loss
+from utils.utilize import config
+from utils.result_processing import plot_last_critic_loss, plot_critic_loss
 import traci
 import datetime
 
