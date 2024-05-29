@@ -2,7 +2,8 @@ import numpy as np
 # from numpy.core.defchararray import index
 import random
 from random import choice
-from utils.utilize import config, plot_demand,  get_NodeConfig
+from utils.utilize import config, get_NodeConfig
+from utils.result_processing import plot_demand
 
 
 class TrafficGenerator():

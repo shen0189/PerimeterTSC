@@ -5,15 +5,16 @@ import os
 import numpy as np
 import matplotlib
 
-from utils.utilize import plot_accu_critic
+from utils.result_processing import plot_accu_critic
 
 matplotlib.use('Agg')
 from agents.loweragents import OAM, FixTime, MaxPressure
 from agents.upperagents import DDPG, DQN, Expert, Static, C_DQN, MFD_PI
 from utils.networkdata import NetworkData
 from peritsc.perimeterdata import PeriSignals
-from utils.utilize import Test, config, plot_lower_reward_epis,  save_config, save_data_train_upper, set_sumo, plot_MFD, plot_actions, \
-    plot_accu, plot_computime, set_train_path, write_log, plot_obj_reward_penalty, set_test_path
+from utils.utilize import Test, set_sumo, config, save_config, set_train_path, write_log, set_test_path
+from utils.result_processing import plot_lower_reward_epis, save_data_train_upper, plot_MFD, plot_actions, \
+    plot_accu, plot_computime, plot_obj_reward_penalty
 import timeit
 from time import time
 import random

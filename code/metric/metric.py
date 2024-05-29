@@ -1,6 +1,7 @@
 import sumolib
 import traci
-from utils.utilize import config, plot_MFD
+from utils.utilize import config
+from utils.result_processing import plot_MFD
 import numpy as np
 from envir.perimeter import Peri_Agent
 import xml.etree.cElementTree as ET
