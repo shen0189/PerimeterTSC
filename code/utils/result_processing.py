@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from utilize import config
+from utils.utilize import config
 import pickle
 import numpy as np
 import os
@@ -178,6 +178,24 @@ def plot_computime(computime):
 
     # plt.savefig(f"{config['plots_path_name']}metric\Computational time.png")
     plt.close()
+
+
+def plot_accu(config, accu, e, n_jobs):
+    plt.xlabel('cycle')
+    plt.ylabel('accumulation (veh)')
+    plt.title(f'PN vehicle accumulation progression of episode{e + 1}')
+    plt.plot(range(len(accu)), accu, 'o-', label=f"accumulation")
+    plt.legend()
+    if e % n_jobs == 0:
+        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_estimate_actual_inflow.png"
+        plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
+        plt.savefig(plot_path)
+    else:
+        file_name = f"e{e + 1}_estimate_actual_inflow.png"
+        plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
+        plt.savefig(plot_path)
+        # plt.savefig(f"{plot_path}e{e+1}_tls_delay.png")
+    pass
 
 
 def plot_accu(config, accu, throughput, buffer_queue, e):
@@ -630,14 +648,11 @@ def save_data_train_upper(agent_upper, agent_lower):
     print('###### Data save: Success ######')
 
 
-
-
-
 def save_stats(config, stats, e, n_jobs, stats_name):
     if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_peri_{stats_name}.pkl"
+        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_{stats_name}.pkl"
     else:
-        file_name = f"e{e + 1}_peri_{stats_name}.pkl"
+        file_name = f"e{e + 1}_{stats_name}.pkl"
     stats_path = os.path.join(config['stats_path_name'], file_name)
     with open(stats_path, 'wb') as f:
         pickle.dump(stats, f)
