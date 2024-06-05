@@ -4,6 +4,8 @@
 -->
 
 <additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+    <edgeData id="EdgeMesurements" file="../../measurements/GridBufferNew/EdgeMesurements.xml" freq="100.00" excludeEmpty='True' />
+    <edgeData id="EdgeMesurements_lower" file="../../measurements/GridBufferNew/EdgeMesurements_lower.xml" freq="5.00" excludeEmpty='True' />
     <!-- Detectors -->
     <inductionLoop id="0000_in" lane="0_0" pos="1.00" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
     <inductionLoop id="0000_out" lane="0_0" pos="472.20" period="50.00" file="../../measurements/GridBufferNew/DetectorMesurements.xml"/>
