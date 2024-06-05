@@ -100,11 +100,12 @@ class Trainer():
                   peri_estimate_inflow=upper_metric['estimated_inflow'])
 
         ## 4.6 save
-        self.save(queue=lower_metric['peri_queue'],
-                  spillover=lower_metric['peri_spillover'],
-                  throughput=lower_metric['peri_throughput'],
-                  inflow=upper_metric['peri_entered_vehs'],
-                  outflow=upper_metric['peri_outflow_vehs'])
+        self.save(peri_queue=lower_metric['peri_queue'],
+                  peri_spillover=lower_metric['peri_spillover'],
+                  peri_throughput=lower_metric['peri_throughput'],
+                  peri_inflow=upper_metric['peri_entered_vehs'],
+                  peri_outflow=upper_metric['peri_outflow_vehs'],
+                  accu=upper_metric['accu'])
 
         ## 4.7 process output
         if self.mode == 'train':
@@ -397,26 +398,30 @@ class Trainer():
 
     def save(self, *args, **kwargs):
 
-        if 'throughput' in kwargs:
+        if 'peri_throughput' in kwargs:
             # perimeter total throughput evolution
-            peri_throughput: list = kwargs['throughput']
-            save_stats(self.config, peri_throughput, self.cur_epis, self.n_jobs, 'throughput')
-        if 'queue' in kwargs:
+            peri_throughput: list = kwargs['peri_throughput']
+            save_stats(self.config, peri_throughput, self.cur_epis, self.n_jobs, 'peri_throughput')
+        if 'peri_queue' in kwargs:
             # perimeter queue length evolution at each gated link
-            peri_queue: dict = kwargs['queue']
-            save_stats(self.config, peri_queue, self.cur_epis, self.n_jobs, 'queue')
-        if 'spillover' in kwargs:
+            peri_queue: dict = kwargs['peri_queue']
+            save_stats(self.config, peri_queue, self.cur_epis, self.n_jobs, 'peri_queue')
+        if 'peri_spillover' in kwargs:
             # perimeter total spillover evolution
-            peri_spillover: list = kwargs['spillover']
-            save_stats(self.config, peri_spillover, self.cur_epis, self.n_jobs, 'spillover')
-        if 'inflow' in kwargs:
+            peri_spillover: list = kwargs['peri_spillover']
+            save_stats(self.config, peri_spillover, self.cur_epis, self.n_jobs, 'peri_spillover')
+        if 'peri_inflow' in kwargs:
             # perimeter total inflow
-            peri_inflow: np.ndarray = kwargs['inflow']
-            save_stats(self.config, peri_inflow, self.cur_epis, self.n_jobs, 'inflow')
-        if 'outflow' in kwargs:
+            peri_inflow: np.ndarray = kwargs['peri_inflow']
+            save_stats(self.config, peri_inflow, self.cur_epis, self.n_jobs, 'peri_inflow')
+        if 'peri_outflow' in kwargs:
             # perimeter total outflow
-            peri_outflow: np.ndarray = kwargs['outflow']
-            save_stats(self.config, peri_outflow, self.cur_epis, self.n_jobs, 'outflow')
+            peri_outflow: np.ndarray = kwargs['peri_outflow']
+            save_stats(self.config, peri_outflow, self.cur_epis, self.n_jobs, 'peri_outflow')
+        if 'accu' in kwargs:
+            # PN accumulation
+            PN_accu = kwargs['accu']
+            save_stats(self.config, PN_accu, self.cur_epis, self.n_jobs, 'accu')
 
     def fill_upper_buffer_reward(self, upper_reward_epis, PN_waiting_epis):
 
