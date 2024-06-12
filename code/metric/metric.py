@@ -289,12 +289,18 @@ class Metric():
 
         ## read csv
         # df = pd.read_csv(file, sep=';')
-        df = pd.read_csv(file, sep=';', usecols=\
+        df_raw = pd.read_csv(file, sep=';', usecols=\
             ['edge_id', 'interval_end', 'edge_sampledSeconds', 'edge_entered', \
                 'edge_density','edge_speed', 'edge_waitingTime', 'edge_left'])
 
+        ## 补充某interval没有车辆信息的edge
+        edges, intervals = df_raw['edge_id'].unique(), df_raw['interval_end'].unique()
+        complete_edge_data = pd.MultiIndex.from_product([edges, intervals], names=['edge_id', 'interval_end'])
+        df_complete = pd.DataFrame(index=complete_edge_data).reset_index()
+        df_complete = df_complete.merge(df_raw, on=['edge_id', 'interval_end'], how='left').fillna(1e-5)
+
         ## fill nan
-        df = df.fillna(0.03)
+        df = df_complete.fillna(0.03)
 
         ## get PN edges
         df_PN = df[df['edge_id'].isin(config['Edge_PN'])]
