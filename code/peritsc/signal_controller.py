@@ -340,7 +340,8 @@ class PeriSignalController:
         '''
         cycle, sfr, yellow = config['cycle_time'], config['through_sfr'], config['yellow_duration']
         lane_maximal_throughput = cycle * sfr
-        maximal_action = config['saturation_flow_rate'] * 3600 * len(self.peri_data.peri_inflow_lanes)
+        maximal_action = config['saturation_flow_rate'] * config['max_green'] * len(self.peri_data.peri_inflow_lanes)
+        M = 1e5
 
         # Multi-objective optimization
         m = gp.Model('qp')
@@ -351,6 +352,7 @@ class PeriSignalController:
         # Variables
         lane_final_queue: Dict[str, gp.Var] = {}
         lane_final_queue_estimate: Dict[str, gp.Var] = {}       # 可能为负
+        lane_spillover: Dict[str, gp.Var] = {}      # 车道排队是否溢出
         lane_relative_queue: Dict[str, gp.Var] = {}
         movement_green_dur: Dict[str, gp.Var] = {}
         lane_green_dur: Dict[str, gp.Var] = {}
@@ -361,6 +363,7 @@ class PeriSignalController:
         for _, lane_id in self.peri_data.peri_inflow_lanes:
             var_queue = m.addVar(lb=0, name=constr_name_attach(lane_id, 'queue'))
             var_queue_estimate = m.addVar(lb=-gp.GRB.INFINITY, name=constr_name_attach(lane_id, 'queue_estimate'))
+            var_spillover = m.addVar(vtype=gp.GRB.BINARY, name=constr_name_attach(lane_id, 'spillover'))
             var_relative_queue = m.addVar(lb=0, name=constr_name_attach(lane_id, 'relative_queue'))
             var_green_dur = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_duration'))
             var_throughput = m.addVar(lb=0, name=constr_name_attach(lane_id, 'throughput'))
@@ -368,6 +371,7 @@ class PeriSignalController:
             var_green_demand = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_demand'))
             lane_final_queue[lane_id] = var_queue
             lane_final_queue_estimate[lane_id] = var_queue_estimate
+            lane_spillover[lane_id] = var_spillover
             lane_relative_queue[lane_id] = var_relative_queue
             lane_green_dur[lane_id] = var_green_dur
             lane_throughput[lane_id] = var_throughput
@@ -383,6 +387,7 @@ class PeriSignalController:
         abs_inflow_diff: gp.Var = m.addVar(lb=0, name='abs_inflow_diff')
         total_squared_queue: gp.Var = m.addVar(lb=0, name='squared_queue')
         total_squared_throughput: gp.Var = m.addVar(lb=0, name='squared_throughput')
+        total_spillover: gp.Var = m.addVar(lb=0, name='total_spillover')
 
         # Multi-objectives
         obj = 0
@@ -391,7 +396,7 @@ class PeriSignalController:
         m.addConstr(inflow_diff == (self.upper_inflow - gp.quicksum(
             lane_throughput[lane_id] for _, lane_id in inflow_lanes)) / maximal_action, name='cal_diff')
         m.addGenConstrAbs(abs_inflow_diff, inflow_diff, name='abs')
-        obj += config['obj_weight']['gating'] * abs_inflow_diff
+        obj += config['upper_obj_weight']['gating'] * abs_inflow_diff
         # obj2 (queue-balance): Minimize the variance of relative queue length,
         # which is equivalent to minimize the summation of squared relative queue length when obj1 >> obj2
         if self.distribution_mode == 'balance_queue':
@@ -402,15 +407,20 @@ class PeriSignalController:
             m.addConstr(
                 total_squared_queue == gp.quicksum(lane_relative_queue[lane_id] * lane_relative_queue[lane_id]
                                                    for _, lane_id in inflow_lanes), name='cal_squared_queue')
-            obj += config['obj_weight']['balance'] * total_squared_queue
+            obj += config['upper_obj_weight']['balance'] * total_squared_queue
         # obj2 (equally distributed): Minimize the variance of normalized throughput,
         # which is equivalent to minimize the summation of squared throughput when obj1 >> obj2
         elif self.distribution_mode == 'equal':
             m.addConstr(total_squared_throughput == gp.quicksum(
                 lane_throughput[lane_id] * lane_throughput[lane_id] / pow(lane_maximal_throughput, 2)
                 for _, lane_id in inflow_lanes), name='cal_squared_throughput')
-            obj += config['obj_weight']['balance'] * total_squared_throughput
+            obj += config['upper_obj_weight']['balance'] * total_squared_throughput
         m.setObjective(obj)
+        # obj3 (prevent spillover): Minimize the number of lanes with spillover
+        if config['peri_spillover_penalty'] is True:
+            m.addConstr(total_spillover == gp.quicksum(lane_spillover[lane_id] for _, lane_id in inflow_lanes) / len(inflow_lanes),
+                        name='cal_total_spillover')
+            obj += config['upper_obj_weight']['spillover'] * total_spillover
 
         # Add constraints (for inflow movements)
         for signal_id, lane_id in self.peri_data.peri_inflow_lanes:
@@ -452,6 +462,13 @@ class PeriSignalController:
                 # print(f'Combine green time of lane {lane_id} and movement {movement_id}')
                 m.addConstr(movement_green_dur[movement_id] == lane_green_dur[lane_id],
                             name=constr_name_attach(signal_id, lane_id, 'lane_green_duration'))
+            # Constraint 6: Judge whether the lane is spillover
+            if config['peri_spillover_penalty']:
+                alpha = config['spillover_threshold']
+                m.addConstr(alpha * lane.length - lane_final_queue[lane_id] * lane.vehicle_length <= M * (1 - lane_spillover[lane_id]),
+                            name=constr_name_attach(signal_id, lane_id, 'lane_spillover_1'))
+                m.addConstr(alpha * lane.length - lane_final_queue[lane_id] * lane.vehicle_length >= M * lane_spillover[lane_id] + 1 / M,
+                            name=constr_name_attach(signal_id, lane_id, 'lane_spillover_2'))
 
         m.optimize()
 
