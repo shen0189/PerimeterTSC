@@ -274,7 +274,7 @@ def import_train_configuration():
         config['saturation_flow_rate'] = 1550/3600
         config['saturation_limit'] = 1
         config['spillover_threshold'] = 1       # 判断排队溢出的阈值
-        config['obj_weight'] = {'gating': 1e6, 'balance': 1e2, 'local': 1}
+        config['upper_obj_weight'] = {'gating': 1e6, 'balance': 1e2, 'spillover': 1e5}
         config['flow_weight'] = {'inflow': 1, 'outflow': 3, 'normal flow': 1}
         config['avg_spacing'] = 9
         config['max_iteration_step'] = 10
