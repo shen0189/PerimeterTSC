@@ -53,6 +53,9 @@ class LowerAgents:
             self.batch_phase_matrix, self.batch_phase_masks, self.batch_signals\
                 = self._get_batch_signal_matrix()
 
+        ## perimeter config
+        self.spillover_threshold = config['spillover_threshold']
+
         ##
         self.reward_norm = config['lower_reward_max']
        
@@ -449,7 +452,7 @@ class LowerAgents:
         lower_metric['peri_queue'] = queue_data
 
         ''' 4.3 peri spillover times '''
-        threshold = 0.9
+        threshold = self.spillover_threshold
         inflow_length_dict = {edgeID: self.peridata.peri_inflow_lanes_by_laneID[str(edgeID) + '_0'].length for edgeID in queue_data}
         spillover_data = {
             edgeID: [0 if queue / inflow_length_dict[edgeID] < threshold else 1 for queue in queue_data[edgeID]] for
