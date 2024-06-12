@@ -28,36 +28,28 @@ def import_train_configuration():
         DDPG: Can be centralized & decentralized
     '''
     config['mode'] = 'train' # 'test' 'train'
-    config['upper_mode'] = 'Expert'  # 'Static' # 'DDPG' #'DQN' # 'Expert' # 'MaxPressure' # 'C_DQN' # 'PI'
+    config['upper_mode'] = 'PI'  # 'Static' # 'DDPG' #'DQN' # 'Expert' # 'MaxPressure' # 'C_DQN' # 'PI'
     config['lower_mode'] = 'MaxPressure'  # 'FixTime'  #'OAM' # 'MaxPressure'
     config['peri_action_mode'] = 'centralize' # 'decentralize' 'centralize'
-
-    # [PI controller setting]
-    if config['upper_mode'] == 'PI':
-        if config['network'] == 'Grid':
-            config['accu_critic'] = 200
-            config['K_p'] = 20
-            config['K_i'] = 20
-
-        elif config['network'] == 'Bloomsbury':
-            config['accu_critic'] = 700
-            config['K_p'] = 20
-            config['K_i'] = 20
+    config['peri_green_start_model'] = True     # 模型中是否考虑绿灯启亮时间对实际流入率的影响
+    config['peri_spillover_penalty'] = True     # 模型中是否考虑溢出惩罚项
+    config['peri_distribution_mode'] = 'equal'  # 'equal' #  'balance_queue'
+    config['peri_signal_phase_mode'] = 'NEMA'  # 'NEMA' # 'Unfixed' # 'Slot'
+    config['peri_optimization_mode'] = 'decentralize'  # 'centralize' # 'decentralize'
 
     # [state]
     if config['network'] == 'Grid':
         config['states'] = [
-            'accu', 'accu_buffer', 'future_demand',  'network_mean_speed',     ## general
+            'accu', 'accu_buffer', 'future_demand', 'network_mean_speed',     ## general
             'network_halting_vehicles', 'buffer_halting_vehicles',             ## halting
             # 'down_edge_occupancy','buffer_aver_occupancy'                      ## buffer specific
             ]
     if config['network'] == 'Bloomsbury':
         config['states'] = [
-            'accu','network_mean_speed',  'future_demand',      ## general
+            'accu', 'network_mean_speed', 'future_demand',      ## general
             'network_halting_vehicles']
     # 'accu', accu_buffer,'future_demand', 'entered_vehs','network_mean_speed', 'network_halting_vehicles', 'buffer_halting_vehicles'
     #  'down_edge_occupancy','buffer_aver_occupancy', 
-
 
     # [normalization]
     if True:
@@ -75,23 +67,36 @@ def import_train_configuration():
 
     # [network_config]
     if config['network'] == 'Grid':
+        # config['Node'] = {
+        #     'NodePN': [0, 1, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 23, 24],
+        #     'NodePeri': [29, 30, 31, 32]
+        # }
+        # config['Edge'] = list(range(0, 96))
+        # config['Edge_Peri'] = sorted([80, 92, 84, 93, 87, 94, 89, 95])
+        # config['Edge_PN'] = sorted([
+        #     9, 11, 6, 8, 5, 3, 0, 2, 29, 26, 17, 14, 47, 44, 35, 32, 65, 62, 53, 50, 79, 77, 76, 74, 73, 71, 68, 70,
+        #     67, 51, 49, 33, 31, 15, 13, 1, 69, 55, 16, 4, 20, 7, 72, 59, 63, 75, 24, 10, 28, 12, 46, 30, 64, 48, 78, 66,
+        #     18, 19, 21, 22, 23, 25, 27, 34, 36, 37, 39, 38, 40, 41, 43, 42, 45, 52,
+        #     54, 57, 56, 58, 60, 61
+        # ])
+        # config['Edge_PN_out'] = sorted([81, 85, 88, 87])  # the outflows of PN
         config['Node'] = {
             'NodePN': [6, 7, 8, 11, 12, 13, 16, 17, 18],
-            'NodePeri': [29, 30, 31, 32]
+            'NodePeri': [25, 26, 27, 28]
         }
-        config['Edge'] = list(range(0, 96)) 
-        config['Edge_Peri'] = sorted([80, 92, 84, 93, 87, 94, 89, 95])
+        config['Edge'] = list(range(0, 88))
+        config['Edge_Peri'] = list(range(80, 88))
         config['Edge_PN'] = sorted([
             18, 19, 21, 22, 23, 25, 27, 34, 36, 37, 39, 38, 40, 41, 43, 42, 45, 52,
             54, 57, 56, 58, 60, 61
         ])
         config['Edge_PN_out'] = sorted([16, 17, 20, 24, 26, 44, 62, 63, 59, 55, 53,
-                                 35])  # the outflows of PN
-    elif config['network'] =='Bloomsbury':
+                                        35])  # the outflows of PN
+    elif config['network'] == 'Bloomsbury':
         config['Node'] = {
             # 'NodePN': [ 14,13,12,11,9,22,21,20,19,18,17,33,34,35,38],
-            'NodePN': [ 13,12,22,21,20,19,18,17,34],
-            'NodePeri': [50,51,52,53,54,55]
+            'NodePN': [13, 12, 22, 21, 20, 19, 18, 17, 34],
+            'NodePeri': [50, 51, 52, 53, 54, 55]
             # 'NodePeri': [50]
         }
         # read edge data
@@ -103,37 +108,87 @@ def import_train_configuration():
         config['Edge_Peri'] = sorted(df[df['edge_PN'] == 0]['edge_id'].values.tolist())
 
 
-    # [perimeter_config]
+    # [perimeter signal_config]
     if config['network'] == 'Grid': # 'Grid':
-        config['EdgeCross'] = np.array([92, 93, 94, 95])
+        # config['EdgeCross'] = np.array([92, 93, 94, 95])
+        # Peri_info: All perimeter movements
         config['Peri_info'] = {
-            'P0': {
-                'edge': 92,
-                'down_edge': 81,
-                'buffer_edges': [81, 7, 5],
+            'A2': {
+                'node': '2',
+                'edge': 80,
+                'in_edges': [8, 20, 3, 80],  # 按照sumo中定义phase state的顺序 从北进口开始顺时针方向
+                'down_edge': 7,
+                'buffer_edges': [5, 6, 7],
+                'external_in_edges': [80],
+                'external_out_edges': [81],
+                'internal_in_edges': [8, 20, 3],
+                'internal_out_edges': [5, 6, 7],
+                'nema_plan': {'ring1': ['3_s', '8_l', '', '20_s'],
+                              'ring2': ['8_s', '3_l', '', '80_s', '20_l']},
                 'phase_info':
-                ['control_phase', 'yellow_phase', '', 'yellow_phase']
+                    ['', 'yellow_phase', '', 'yellow_phase', 'control_phase', 'yellow_phase', 'control_phase',
+                     'yellow_phase'],  # 根据group-based优化结果修改
+                'slot_stage_plan': {'stage1': ('3_l', '3_s'), 'stage2': ('3_l', '8_l'),
+                                    'stage3': ('8_l', '8_s'), 'stage4': ('3_s', '8_s'),
+                                    'stage5': ('20_l',), 'stage6': ('80_s',), 'stage7': ('20_s', '20_l'),
+                                    'stage8': ('20_s', '80_s')}
             },
-            'P1': {
-                'edge': 93,
-                'down_edge': 83,
-                'buffer_edges': [83, 47, 46],
-                'phase_info':
-                ['control_phase', 'yellow_phase', '', 'yellow_phase']
+            'C4': {
+                'node': '14',
+                'edge': 82,
+                'in_edges': [82, 64, 44, 30],
+                'down_edge': 47,
+                'buffer_edges': [48, 47, 46],
+                'external_in_edges': [82],
+                'external_out_edges': [83],
+                'internal_in_edges': [30, 44, 64],
+                'internal_out_edges': [48, 47, 46],
+                'nema_plan': {'ring1': ['82_s', '44_l', '', '64_s', '30_l'],
+                              'ring2': ['44_s', '', '30_s', '64_l']},
+                'phase_info': ['control_phase', 'yellow_phase', 'control_phase', 'yellow_phase',
+                               '', 'yellow_phase', '', 'yellow_phase'],
+                'slot_stage_plan': {'stage1': ('30_l', '30_s'), 'stage2': ('30_l', '64_l'),
+                                    'stage3': ('64_l', '64_s'), 'stage4': ('30_s', '64_s'),
+                                    'stage5': ('44_l',), 'stage6': ('82_s',), 'stage7': ('44_s', '44_l'),
+                                    'stage8': ('44_s', '82_s')}
             },
-            'P2': {
-                'edge': 94,
-                'down_edge': 86,
-                'buffer_edges': [86, 72, 74],
-                'phase_info':
-                ['control_phase', 'yellow_phase', '', 'yellow_phase']
+            'E2': {
+                'node': '22',
+                'edge': 84,
+                'in_edges': [76, 84, 71, 59],
+                'down_edge': 72,
+                'buffer_edges': [73, 72, 74],
+                'external_in_edges': [84],
+                'external_out_edges': [85],
+                'internal_in_edges': [59, 71, 76],
+                'internal_out_edges': [73, 72, 74],
+                'nema_plan': {'ring1': ['76_s', '71_l', '', '84_s', '59_l'],
+                              'ring2': ['71_s', '76_l', '', '59_s']},
+                'phase_info': ['', 'yellow_phase', '', 'yellow_phase',
+                               'control_phase', 'yellow_phase', 'control_phase', 'yellow_phase'],
+                'slot_stage_plan': {'stage1': ('71_l', '71_s'), 'stage2': ('71_l', '76_l'),
+                                    'stage3': ('76_l', '76_s'), 'stage4': ('71_s', '76_s'),
+                                    'stage5': ('59_l',), 'stage6': ('84_s',), 'stage7': ('59_s', '59_l'),
+                                    'stage8': ('59_s', '84_s')}
             },
-            'P3': {
-                'edge': 95,
-                'down_edge': 90,
-                'buffer_edges': [90, 32, 33],
-                'phase_info':
-                ['control_phase', 'yellow_phase', '', 'yellow_phase']
+            'C0': {
+                'node': '10',
+                'edge': 86,
+                'in_edges': [35, 49, 86, 15],
+                'down_edge': 32,
+                'buffer_edges': [31, 32, 33],
+                'external_in_edges': [86],
+                'external_out_edges': [87],
+                'internal_in_edges': [15, 35, 49],
+                'internal_out_edges': [31, 32, 33],
+                'nema_plan': {'ring1': ['35_s', '', '49_s', '15_l'],
+                              'ring2': ['86_s', '35_l', '', '15_s', '49_l']},
+                'phase_info': ['control_phase', 'yellow_phase', 'control_phase', 'yellow_phase',
+                               '', 'yellow_phase', '', 'yellow_phase'],
+                'slot_stage_plan': {'stage1': ('15_l', '15_s'), 'stage2': ('15_l', '49_l'),
+                                    'stage3': ('49_l', '49_s'), 'stage4': ('15_s', '49_s'),
+                                    'stage5': ('35_l',), 'stage6': ('86_s',), 'stage7': ('35_s', '35_l'),
+                                    'stage8': ('35_s', '86_s')}
             }
         }
     elif config['network'] == 'Bloomsbury': 
@@ -181,60 +236,114 @@ def import_train_configuration():
                 ['control_phase', 'yellow_phase', '', 'yellow_phase']
             },
         }
+    config['inflow_edge'] = [signal_info['edge'] for signal_info in config['Peri_info'].values()]
 
     # [simulation]
     if True:    
         # -1 allcores ## 0 single process ## 1+ multi-process
         config['n_jobs'] = 0
         config['expert_episode'] = 0
-        config['gui'] = False  # True  #False  #
-        config['infostep'] = 100 # every 10 secs to record info
+        config['gui'] = True  # True  #False  #
         config['control_interval'] = 20# 10 sec for lower level
-        config['max_steps'] = 1000  # 10800 # 1000 # 6000
+        config['max_steps'] = 6000  # 10800 # 1000 # 6000
         # config['green_duration'] = green_duration
         config['min_green'] = 5.
         config['yellow_duration'] = 5.
-        config['cycle_time'] = 100.
-        config['max_green_duration'] = 80
-        config['max_green'] = config[
-            'cycle_time'] - 2 * config['yellow_duration'] - config['min_green']
+        config['cycle_time'] = 100
+        config['max_green_duration'] = 50
+        config['max_green'] = 50
+        # config['max_green_duration'] = 80
+        # config['max_green'] = config[
+        #     'cycle_time'] - 2 * config['yellow_duration'] - config['min_green']
         config['flow_rate'] = 0.9  # secs per vehicles
         # config['act_range'] = config['max_green'] // config['flow_rate'] * config[
         #     'EdgeCross'].shape[0]
         config['splitmode'] = 1  # 0 = waittime, 1 = waitveh
+        config['slot_merge_cycle_num'] = 2      # Number of cycles in the generalized cycle in slot-based control
+        config['slot_number'] = 7
+        if config['peri_signal_phase_mode'] == 'Slot':
+            config['cycle_time'] = config['cycle_time'] * config['slot_merge_cycle_num']  # update and record info
+        config['infostep'] = config['cycle_time']
+
+    # [Signal Optimization]
+    if True:
+        config['left_sfr'] = 1600/3600   # veh/s
+        config['through_sfr'] = 1800/3600
+        config['right_sfr'] = 1600/3600
+        # config['saturation_flow_rate'] = {}
+        config['saturation_flow_rate'] = 1550/3600
+        config['saturation_limit'] = 1
+        config['spillover_threshold'] = 1       # 判断排队溢出的阈值
+        config['obj_weight'] = {'gating': 1e6, 'balance': 1e2, 'local': 1}
+        config['flow_weight'] = {'inflow': 1, 'outflow': 3, 'normal flow': 1}
+        config['avg_spacing'] = 9
+        config['max_iteration_step'] = 10
+
+    # [PI controller setting]
+    if config['upper_mode'] == 'PI':
+        if config['network'] == 'Grid':
+            config['accu_critic'] = 700    # 700 for 3*3
+            config['K_p'] = 20 / 3600 * config['cycle_time']     # normalization
+            config['K_i'] = 5 / 3600 * config['cycle_time']
+
+        elif config['network'] == 'Bloomsbury':
+            config['accu_critic'] = 700
+            config['K_p'] = 20
+            config['K_i'] = 20
 
     # [demand]
     if True:
         config['DemandConfig'] = [
             {
-                'DemandType': 'outin',
-                'FromRegion': 'NodePeri',
-                'ToRegion': 'NodePN',
-                'VolumnRange': [[5000, 5000], [5000, 5000], [5000, 5000], [0, 0]],
+                'DemandType': 'Outside-PN (high)',     # 从西向东和从北向南为高流量方向
+                'FromRegion': [25, 26],
+                'ToRegion': [6, 7, 8, 11, 12, 13, 16, 17, 18],
+                'VolumnRange': [[2000, 2000], [2000, 3000], [3000, 0], [0, 0]],
                 # 'Demand_interval': [20, 20, 15, 5],
-                'Demand_interval': [36, 36, 27, 9],
+                'Demand_interval': [0.15, 0.2, 0.15, 0.5],     # 变成比例的形式, 和可能不为1
+                'Multiplier': 1.8  # 0.1 #0.5 #1.0
+            },
+            {
+                'DemandType': 'Outside-PN (low)',     # 从东向西和从南向北为低流量方向
+                'FromRegion': [27, 28],
+                'ToRegion': [6, 7, 8, 11, 12, 13, 16, 17, 18],
+                'VolumnRange': [[2000, 2000], [2000, 3000], [3000, 0], [0, 0]],
+                'Demand_interval': [0.15, 0.2, 0.15, 0.5],
                 'Multiplier': 1  # 0.1 #0.5 #1.0
             },
             {
-                'DemandType': 'inin',
-                'FromRegion': 'NodePN',
-                'ToRegion': 'NodePN',
-                'VolumnRange': [[400, 400], [400, 1500], [1500, 1000], [0, 0]],
-                'Demand_interval': [36, 18, 45, 9],
-                'Multiplier': 2#1.5  # 0.1 #0.5 #1
+                'DemandType': 'PN-PN',
+                'FromRegion': [6, 7, 8, 11, 12, 13, 16, 17, 18],
+                'ToRegion': [6, 7, 8, 11, 12, 13, 16, 17, 18],
+                'VolumnRange': [[400, 400], [400, 800], [800, 0], [0, 0]],
+                'Demand_interval': [0.4, 0.2, 0.2, 0.2],
+                'Multiplier': 1 #1.5  # 0.1 #0.5 #1
             },
             {
-                'DemandType': 'inout',
-                'FromRegion': 'NodePN',
-                'ToRegion': 'NodePeri',
-                'VolumnRange': [[800, 800], [800, 1000], [1000, 0], [0, 0]],
-                'Demand_interval': [27, 18, 54, 9],
-                'Multiplier':2#1.5  # 0.1 #0.5 #1
+                'DemandType': 'PN-Outside (high)',     # 从西向东和从北向南为高流量方向
+                'FromRegion': [6, 7, 8, 11, 12, 13, 16, 17, 18],
+                'ToRegion': [27, 28],
+                'VolumnRange': [[2000, 2000], [2000, 2500], [2500, 0], [0, 0]],
+                'Demand_interval': [0.15, 0.2, 0.15, 0.5],
+                'Multiplier': 1.5 #1.5  # 0.1 #0.5 #1
+            },
+            {
+                'DemandType': 'PN-Outside (low)',
+                'FromRegion': [6, 7, 8, 11, 12, 13, 16, 17, 18],
+                'ToRegion': [25, 26],
+                'VolumnRange': [[2000, 2000], [2000, 2500], [2500, 0], [0, 0]],
+                'Demand_interval': [0.15, 0.2, 0.15, 0.5],
+                'Multiplier': 1  # 1.5  # 0.1 #0.5 #1
             }
         ]
         config['DemandNoise'] = {'noise_mean': 0, 'noise_variance': 0.1}
         config['Demand_interval_sec'] = 100  # 100sec for each interval
-        config['Demand_interval_total'] = 108
+        config['Demand_interval_total'] = int(config['max_steps'] / config['Demand_interval_sec'])
+        # 修改Demand_interval
+        for demand in config['DemandConfig']:
+            demand['Demand_interval'] = [round(ratio * config['Demand_interval_total']) for ratio in demand['Demand_interval']]
+            interval_error = config['Demand_interval_total'] - sum(demand['Demand_interval'])
+            demand['Demand_interval'][-1] += interval_error
         # future steps of demand in the states
         config['Demand_state_steps'] = 3
 
@@ -269,7 +378,7 @@ def import_train_configuration():
         config['lr_A'] = 1e-4
         config['tau'] = 1e-2
         config['batch_size'] = 128 #64  # 128
-        config['total_episodes'] = 100 #1000 # 500
+        config['total_episodes'] = 10 #1000 # 500
         config['online'] = False  # True #False
         # config['input_dim'] = len(config['states']) * config['state_steps']
         if config['peri_action_mode'] == 'centralize':
@@ -295,18 +404,28 @@ def import_train_configuration():
 
     # [dir]
     config['savefile_dir'] = "output/"
-    config['models_path_name'] = "output\\model"
+    config['models_path_name'] = "output/model"
     config['plots_path_name'] = 'output/plots'
     config['cache_path_name'] = 'output/cache'
+    config['stats_path_name'] = 'output/statistics'
+
 
     if config['network'] == 'Grid':
-        config['sumocfg_file_name'] = 'network/GridBuffer/GridBuffer.sumocfg'
-        config['edgefile_dir'] = "network/GridBuffer/GridBuffer.edg.xml"
-        config['netfile_dir'] = "network/GridBuffer/GridBuffer.net.xml"
-        config['routefile_dir'] = "network/GridBuffer/GridBuffer.rou.xml"
-        config['edge_outputfile_dir'] = "network/GridBuffer/EdgeMesurements.xml"
-        config['lane_outputfile_dir'] = "network/GridBuffer/EdgeMesurements_lower.xml"
-        config['queuefile_dir'] = "network/GridBuffer/queue.xml"
+        # config['sumocfg_file_name'] = 'network/GridBuffer/GridBuffer.sumocfg'
+        # config['edgefile_dir'] = "network/GridBuffer/GridBuffer.edg.xml"
+        # config['netfile_dir'] = "network/GridBuffer/GridBuffer.net.xml"
+        # config['routefile_dir'] = "network/GridBuffer/GridBuffer.rou.xml"
+        # config['edge_outputfile_dir'] = "measurements/GridBuffer/EdgeMesurements.xml"
+        # config['lane_outputfile_dir'] = "measurements/GridBuffer/EdgeMesurements_lower.xml"
+        # config['queuefile_dir'] = "measurements/GridBuffer/queue.xml"
+
+        config['sumocfg_file_name'] = 'network/GridBufferNew/GridBuffer.sumocfg'
+        config['edgefile_dir'] = "network/GridBufferNew/GridBuffer.edg.xml"
+        config['netfile_dir'] = "network/GridBufferNew/GridBuffer.net.xml"
+        config['routefile_dir'] = "network/GridBufferNew/GridBuffer.rou.xml"
+        config['edge_outputfile_dir'] = "measurements/GridBufferNew/EdgeMesurements.xml"
+        config['lane_outputfile_dir'] = "measurements/GridBufferNew/EdgeMesurements_lower.xml"
+        config['queuefile_dir'] = "measurements/GridBufferNew/queue.xml"
         
         # tls configure 
         if config['lower_mode'] == 'OAM':  # 'FixTime'  #'OAM' # 'MaxPressure'
@@ -317,10 +436,11 @@ def import_train_configuration():
     if config['network'] == 'Bloomsbury':
         config['sumocfg_file_name'] = 'network/Bloomsbury/Bloomsbury.sumocfg'
         config['netfile_dir'] = "network/Bloomsbury/Bloomsbury.net.xml"
-        config['outputfile_dir'] = "network/Bloomsbury/EdgeMesurements.xml"
         config['edgefile_dir'] = "network/Bloomsbury/Bloomsbury.edg.xml"
         config['routefile_dir'] = "network/Bloomsbury/Bloomsbury.rou.xml"
-        config['queuefile_dir'] = "network/Bloomsbury/queue.xml"
+        config['queuefile_dir'] = "measurements/Bloomsbury/queue.xml"
+        config['edge_outputfile_dir'] = "measurements/Bloomsbury/EdgeMesurements.xml"
+        config['lane_outputfile_dir'] = "measurements/Bloomsbury/EdgeMesurements_lower.xml"
 
                 # tls configure 
         if config['lower_mode'] == 'OAM':  # 'FixTime'  #'OAM' # 'MaxPressure'
@@ -432,7 +552,11 @@ def set_train_path(path_name, type):
         path_name_model = os.path.join(path_name, 'model', '')
         os.makedirs(os.path.dirname(path_name_model), exist_ok=True)
 
-    return path_name, path_name_model
+        return path_name, path_name_model
+
+    else:
+        return path_name
+
 
 def set_test_path(path_name):
     ''' set the path to load the well-trained model
@@ -440,341 +564,6 @@ def set_test_path(path_name):
     path_name = os.path.join(os.getcwd(), path_name, '')
     return path_name
 
-################# PLOT #######################
-def plot_MFD(config, accu, flow, aggregate_time, e, reward, n_jobs, reward_lower):
-    ''' Plot MFD of each simulation
-    '''
-    # unit reform
-    # throughput = np.array(throughput) / aggregate_time * 3600
-    plt.xlabel('acc(veh)')
-    plt.ylabel('outflow(veh/h)')
-    plt.title(f'MFD (episode{e+1})')
-    plt.scatter(accu, flow)
-    plt.xlim((0., config['accu_max']))
-    plt.ylim(0., 1000)
-    # plt.plot(x1, y1, label='整体路网基本图')
-    # plt.plot(x2, y2, label='子路网基本图')
-    # plt.legend()
-    # plt.show()
-    if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e)/n_jobs+1, 0))}_MFD_{np.around(reward, 2)}_{np.around(reward_lower, 2)}.png"
-        plot_path = os.path.join(config['plots_path_name'], 'test',file_name)
-        plt.savefig(plot_path)
-
-    else:
-        file_name = f"e{e+1}_MFD_{int(np.around(reward, 2))}_{np.around(reward_lower, 2)}.png"
-        plot_path = os.path.join(config['plots_path_name'], 'explore',file_name)
-        plt.savefig(plot_path)
-    plt.close()
-
-def plot_flow_MFD(config, accu, flow, e, n_jobs, traci = False):
-    # accu = np.array(accu)
-    # mean_speed = np.array(mean_speed)
-    # TTD = accu * mean_speed* aggregate_time  # nveh*m/sec*sec = veh*m
-    # flow = TTD / PN_road_length_tot / (aggregate_time/3600)
-    # density = accu/(PN_road_length_tot/1000)
-
-    plt.xlabel('density(veh/km)')
-    plt.ylabel('flow (veh/h)')
-    plt.title(f'Flow-density MFD')
-    plt.scatter(accu, flow)
-    plt.xlim((0., config['accu_max']))
-    plt.ylim(0., 400)
-    if traci:
-        if e % n_jobs == 0:
-            plt.savefig(
-                f"{config['plots_path_name']}test\e{np.around((e)/n_jobs+1, 0)}_flow_MFD_traci.png")
-
-        else:
-            plt.savefig(
-                f"{config['plots_path_name']}e{e+1}_flow_MFD_traci.png")
-    else:
-        if e % n_jobs == 0:
-            plt.savefig(
-                f"{config['plots_path_name']}test\e{np.around((e)/n_jobs+1, 0)}_flow_MFD_output.png")
-
-        else:
-            plt.savefig(
-                f"{config['plots_path_name']}e{e+1}_flow_MFD_output.png")
-    plt.close()
-    plt.close('all')
-
-def plot_demand(config, demand_config, demand_interval_sec, demand_interval_total):
-
-    
-    Demand_Interval = np.array(
-        [i * demand_interval_sec for i in range(demand_interval_total)])
-    # Demand_Interval = np.reshape(Demand_Interval, (1,-1))
-    # plt.figure()
-    plt.xlabel('Time(sec)')
-    plt.ylabel('Demand(veh/h)')
-    plt.title('Demand profile')
-
-    for DemandType in demand_config:
-        plt.plot(Demand_Interval,
-                 DemandType['Demand'][0],
-                 label=f"{DemandType['DemandType']}")
-
-    plt.legend()
-    # plt.show()
-    plt.savefig(f"{config['plots_path_name']}Demand.png")
-    plt.close()
-
-def plot_reward(reward):
-    plt.xlabel('episode')
-    plt.ylabel('reward')
-    plt.title('Reward')
-    plt.plot(range(len(reward)), reward, 'o-')
-    plt.savefig(f"{config['plots_path_name']}Reward.png")
-    plt.close()
-
-def plot_penalty(penalty):
-    
-    plt.xlabel('episode')
-    plt.ylabel('penalty')
-    plt.title('buffer_queue along training')
-    plt.plot(range(len(penalty)), penalty, 'o-')
-    plt.savefig(f"{config['plots_path_name']}penalty.png")
-    plt.close()
-
-def plot_obj_reward_penalty(obj, penalty, reward):
-    
-    # reward
-    plt.xlabel('episode')
-    plt.ylabel('reward')
-    plt.title('reward')
-    plt.plot(range(len(reward)), reward, 'o-')
-    file_name = "upper_reward.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric',file_name)
-    plt.savefig(plot_path)
-    # plt.savefig(f"{config['plots_path_name']}metric/reward.png")
-    plt.close()
-
-    # penalty
-    plt.xlabel('episode')
-    plt.ylabel('penalty')
-    plt.title('penalty')
-    plt.plot(range(len(penalty)), penalty, 'o-')
-    file_name = "upper_penalty.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric',file_name)
-    plt.savefig(plot_path)
-    plt.close()
-
-    # objective
-    plt.xlabel('episode')
-    plt.ylabel('objective')
-    plt.title('total objective')
-    plt.plot(range(len(obj)), obj, 'o-')
-    file_name = "upper_objective.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric',file_name)
-    plt.savefig(plot_path)
-    plt.close()
-
-    # together
-    plt.xlabel('episode')
-    plt.ylabel('objective')
-    plt.title('total objective')
-    plt.plot(range(len(obj)), obj, 'ko-', label=f"objective")
-    plt.plot(range(len(reward)), reward, 'bo-', label=f"reward")
-    plt.plot(range(len(penalty)), penalty, 'go-', label=f"penalty")
-    plt.legend()
-    file_name = "upper_objective_together.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric',file_name)
-    plt.savefig(plot_path)
-    plt.close()
-
-def plot_accu_critic(accu_list):
-    
-    # accu_critic
-    plt.xlabel('episode')
-    plt.ylabel('n_critical')
-    plt.title('critical accumulation')
-    plt.plot(range(len(accu_list)), accu_list, 'o-')
-
-    file_name = "n_critic.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric',file_name)
-    plt.savefig(plot_path)
-
-    # plt.savefig(f"{config['plots_path_name']}metric/n_critic.png")
-    plt.close()
-
-
-def plot_computime(computime):
-    plt.xlabel('episode')
-    plt.ylabel('computational time (secs)')
-    plt.title('computational time of each episode')
-    plt.plot(range(len(computime)), computime, 'o-')
-
-    file_name = "Computational time.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric',file_name)
-    plt.savefig(plot_path)
-
-    # plt.savefig(f"{config['plots_path_name']}metric\Computational time.png")
-    plt.close()
-
-def plot_accu(config, accu, throughput, buffer_queue, e):
-    ''' Plot progression of accumulation and throughput of each simulation
-    '''
-    plt.subplot(3, 1, 1)
-    # plt.xlabel('cycle')
-    plt.ylabel('accumulation (veh)')
-    plt.title(f'progression of (episode{e+1})')
-    plt.plot(range(len(accu)), accu, 'o-', label=f"accumulation")
-    plt.legend()
-
-    plt.subplot(3, 1, 2)
-    plt.xlabel('cycle')
-    plt.ylabel('throughput (veh/cycle)')
-    plt.plot(range(len(throughput)), throughput, 'g>-', label=f"throughput")
-    plt.legend()
-
-    plt.subplot(3, 1, 3)
-    plt.xlabel('cycle')
-    plt.ylabel('vehicle number (veh/cycle)')
-    plt.plot(range(len(buffer_queue)), buffer_queue,
-             'k>-', label=f"buffer queue")
-    plt.legend()
-
-    plt.savefig(f"{config['plots_path_name']}e{e+1}_accu_throuput.png")
-    plt.close()
-
-def plot_critic_loss(critic_loss, level, mode):  
-    plt.xlabel('epoch')
-    plt.ylabel('mse')
-    plt.title('Critic loss')
-    plt.plot(range(len(critic_loss)), critic_loss)
-
-    file_name = f"{level}_{mode}_CriticLoss.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic',file_name)
-    plt.savefig(plot_path)
-
-    # plt.savefig(f"{config['plots_path_name']}critic\{level}_{mode}_CriticLoss.png")
-
-    plt.close()
-
-def plot_critic_loss_cur_epis(critic_loss, cur_epis, lr):  
-    plt.xlabel('epoch')
-    plt.ylabel('mse')
-    plt.title('Critic loss')
-    plt.plot(range(len(critic_loss)), critic_loss)
-
-    file_name = f"CriticLoss_e{cur_epis}.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic',file_name)
-    plt.savefig(plot_path)
-
-    plt.close()
-
-def plot_last_critic_loss(last_critic_loss, level):
-    plt.xlabel('epoch')
-    plt.ylabel('mse')
-    plt.title('Last Critic loss')
-    plt.plot(range(len(last_critic_loss)), last_critic_loss)
-
-    file_name = f"LastCriticLoss_{level}.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic',file_name)
-    plt.savefig(plot_path)
-
-    plt.close()
-
-def plot_throughput(throughput):
-    ''' Plot throughput in the training for each episode
-    '''
-    sum_throughput = [sum(i) for i in throughput]
-    plt.xlabel('epoch')
-    plt.ylabel('throughput (veh/hour)')
-    plt.title('Throughput')
-    plt.plot(range(len(sum_throughput)), sum_throughput, 'o-')
-    plt.savefig(f"{config['plots_path_name']}metric/throughput.png")
-    plt.close()
-
-def plot_actions(config, actions, actions_excuted, e, action_type, n_jobs):
-
-    # if peri_action_mode =='centralize' or action_type == 'Expert':
-    #     ''' for centralized actions
-    #     '''
-    #     # plt.xlabel('')
-    #     plt.ylabel('allowed vehicles')
-    #     plt.title(f'action v.s. executed (episode{e+1})')
-    #     plt.bar(range(len(actions)), actions)
-    #     plt.bar(range(len(actions)), expert_action_list)
-    #     plt.plot(range(len(actions_excuted)),
-    #             actions_excuted,
-    #             'ko-',
-    #             label=f"excuted actions")
-    #     plt.legend()
-    #     plt.ylim((0., config['max_green'] * 4))
-    #     # plt.show()
-    #     plt.savefig(f"{config['plots_path_name']}e{e+1}_actions.png")
-    #     plt.close()
-    
-    # else:
-    ''' for decentralized actions
-    '''
-    actions = np.array(actions)
-    actions_cum = actions.cumsum(axis=1)
-    
-    category_names = list(config['Peri_info'].keys())
-    if action_type == 'Expert':
-        category_colors = plt.get_cmap('seismic')(np.linspace(0.15, 0.85, actions_cum.shape[1]))
-    else:
-        category_colors = plt.get_cmap('RdYlGn')(np.linspace(0.15, 0.85, actions_cum.shape[1]))
-
-    fig, ax = plt.subplots()
-    ax.yaxis.set_visible(True)
-    ax.set_ylim(0, config['max_green']*len(config['Peri_info']))
-
-    for i, (colname, color) in enumerate(zip(category_names, category_colors)):
-        heights = actions[:, i]
-        # 取第一列数值
-        starts = actions_cum[:, i] - heights
-        # 取每段的起始点
-        ax.bar(range(len(actions)), heights, bottom=starts,
-                label=colname, color=color)
-        # xcenters = starts + heights / 2
-        # r, g, b, _ = color
-        # text_color = 'white' if r * g * b < 0.5 else 'darkgrey'
-        # for y, (x, c) in enumerate(zip(xcenters, heights)):
-        #     ax.text(y, x, str(int(c)), ha='center', va='center',
-        #             color=text_color, rotation = 90)
-        # fig.savefig(f"{config['plots_path_name']}e{e+1}_actions.png")
-    plt.plot(range(len(actions_excuted)),
-            actions_excuted,
-            'ko-',
-            label=f"excuted actions")
-    ax.legend()
-    if action_type == 'Expert':
-        file_name = f"e{e+1}_actions_expert.png"
-        plot_path = os.path.join(config['plots_path_name'], 'explore',file_name)
-        fig.savefig(plot_path)
-    else:
-        if e % n_jobs == 0:
-            file_name = f"e{int(np.around((e)/n_jobs+1, 0))}_actions.png"
-            plot_path = os.path.join(config['plots_path_name'], 'test',file_name)
-            fig.savefig(plot_path)
-        else:
-            file_name = f"e{e+1}_actions.png"
-            plot_path = os.path.join(config['plots_path_name'], 'explore',file_name)
-            fig.savefig(plot_path)
-    plt.close()
-
-def plot_q_value(q_value):
-    plt.xlabel('epoch')
-    plt.ylabel('q_value')
-    plt.title('Actor loss')
-    plt.plot(range(len(q_value)), q_value)
-    plt.savefig(f"{config['plots_path_name']}critic\ActorLoss.png")
-    plt.close()
-
-def plot_q_value_improve(q_value_improve):
-    plt.xlabel('epoch')
-    plt.ylabel('q_value_improve')
-    plt.title('q_value improvement of each update')
-    plt.plot(range(len(q_value_improve)), q_value_improve)
-
-    file_name = "q_improve.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic',file_name)
-    plt.savefig(plot_path)
-    plt.close()
 
 def write_log(config):
     with open(f"{config['plots_path_name']}A-readme.txt", "a") as file:
@@ -794,7 +583,7 @@ def write_log(config):
         print(f"Gamma = {config['gamma']}\n", file=file)
         print(f"Gamma_multi_step = {config['gamma_multi_step']}\n", file=file)
         print(f"LR_CRITIC = {config['lr_C']}\n", file=file)
-        print(f"LR_CRITIC_DECAY = {config['lr_C_decay']}\n", file=file) 
+        print(f"LR_CRITIC_DECAY = {config['lr_C_decay']}\n", file=file)
         print(f"LR_ACTOR = {config['lr_A']}\n", file=file)
         print(f"TAU = {config['tau']}\n", file=file)
         print(f"Reuse time = {config['reuse_time']}\n", file=file)
@@ -809,210 +598,15 @@ def write_log(config):
         print(
             f"Reward normalization in batch replay= {config['reward_normalization']}\n", file=file)
 
-def plot_tsc_delay(config, tsc_all, e, n_jobs):
-    ''' plot delay for each junction
-    '''
-    plt.xlabel('tsc_id')
-    plt.ylabel('Delay(1e5 sec)')
-    plt.title('Total delay for each tsc')
-    delay= {}
-    for t_id, t_value in tsc_all.items():
-        delay[t_id] = sum(t_value['delay_step'])/1e5
 
-    # delay=sorted(delay)
-    sorted_tuples = sorted(delay.items(), key=lambda item: item[1])
-    sort_delay = {k: v for k, v in sorted_tuples}
-    plt.bar(sort_delay.keys(), sort_delay.values())
-    plt.ylim((0., 10))
-
-    # plt.legend()
-    # plt.show()
-    if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e)/n_jobs+1, 0))}_each_tsc_delay.png"
-        plot_path = os.path.join(config['plots_path_name'], 'test',file_name)
-        plt.savefig(plot_path)
-    else:
-        file_name = f"e{e+1}_each_tsc_delay.png"
-        plot_path = os.path.join(config['plots_path_name'], 'explore',file_name)
-        plt.savefig(plot_path)
-    plt.close()
-
-def plot_lower_reward_epis(reward_epis):
-    ''' plot lower level reward of each epis
-    '''
-    # reward
-    plt.xlabel('episode')
-    plt.ylabel('lower level reward')
-    plt.title('reward')
-    plt.plot(range(len(reward_epis)), reward_epis, 'o-')
-
-    file_name = "lower_reward.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric',file_name)
-
-    plt.savefig(plot_path)
-    plt.close()
-
-def plot_phase_mean_time(config, controled_light, tsc, e, n_jobs):
-    ''' plot the mean time of each phase of each tsc
-    '''
-    phase_time = {}
-    ## calculate mean phase time
-    for tl_id in controled_light:
-        phase_time[tl_id] = np.mean(tsc[tl_id].phase_time_list)
-    
-    # plt.bar(range(len(phase_time)), phase_time.values())
-    plt.bar(phase_time.keys(), phase_time.values())
-
-    plt.xlabel('tl_id')
-    plt.ylabel("phase mean time (sec)")
-    plt.title(f"phase mean time of episode {e}")
-    # for a, b in phase_time.items():
-    #     plt.text(a, b, '%.0f' % b, ha='center', va='bottom', fontsize=11)
-
-    if e % n_jobs == 0:
-        plt.savefig(
-            f"{config['plots_path_name']}test\e{np.around((e)/n_jobs+1, 0)}_phase_mean_time.png")
-
-    else:
-        plt.savefig(
-            f"{config['plots_path_name']}e{e+1}_phase_mean_time.png")
-    plt.close()
-
-def plot_flow_progression(config, flow,e, n_jobs):
-    plt.subplot(2, 1, 1)
-    plt.ylabel('flow')
-    plt.title(f'flow progression of (episode{e+1})')
-    plt.plot(range(len(flow)), flow, 'o-')
-    plt.ylim((0., 350))
-
-    # plt.legend()
-
-    plt.subplot(2, 1, 2)
-    plt.ylabel('total flow')
-    # plt.title(f'penalty credit assignment of (episode{e+1})')
-    plt.plot(range(len(flow)), np.cumsum(flow/400), 'o-')
-    plt.ylim((0., 60))
-
-    # plt.legend()
-
-    if e % n_jobs == 0:
-        plt.savefig(
-            f"{config['plots_path_name']}test\e{np.around((e)/n_jobs+1, 0)}_flow_progression.png")
-
-    else:
-        plt.savefig(
-            f"{config['plots_path_name']}e{e+1}_flow_progression.png")
-    plt.close()
-
-def plot_peri_waiting(config, peri_waiting_tot, peri_waiting_mean, e, n_jobs):
-    ''' Plot perimeter waiting time during the simulation
-    '''
-
-    '''total perimeter waiting '''
-    sum_peri_waiting = np.sum(peri_waiting_tot,1)/3600
-    plt.xlabel('time')
-    plt.ylabel('Perimeter delay (hour)')
-    plt.title('Total perimeter delay in each cycle')
-    plt.plot(range(len(sum_peri_waiting)), sum_peri_waiting)
-    if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e)/n_jobs+1, 0))}_periwait_tot.png"
-        plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
-        plt.savefig(plot_path)
-    else:
-        file_name = f"e{e+1}_periwait_tot.png"
-        plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
-        plt.savefig(plot_path)
-    plt.close()
-
-    ''' mean perimeter waiting'''
-    plt.xlabel('time')
-    plt.ylabel('Delay (veh.sec)')
-    plt.title('Average perimeter delay in each cycle')
-    plt.plot(range(len(peri_waiting_mean)), peri_waiting_mean)
-    if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e)/n_jobs+1, 0))}_periwait_mean.png"
-        plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
-        plt.savefig(plot_path)
-    else:
-        file_name = f"e{e+1}_periwait_mean.png"
-        plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
-        plt.savefig(plot_path)
-    plt.close()
-
-def plot_controlled_tls_delay_epis(config,tls_delay_epis, e, n_jobs, ylim,title):
-    ''' plot controlled tls delay progressions along the epis
-    '''
-    plt.xlabel('time')
-    plt.ylabel('delay (sec)')
-    plt.title(f'{title} progression')
-    plt.plot(range(len(tls_delay_epis)), tls_delay_epis, '-')
-    plt.ylim((0, ylim))
-    if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e)/n_jobs+1, 0))}_{title}.png"
-        plot_path = os.path.join(config['plots_path_name'], 'test',file_name)
-        plt.savefig(plot_path)
-    else:
-        file_name = f"e{e+1}_{title}.png"
-        plot_path = os.path.join(config['plots_path_name'], 'explore',file_name)
-        plt.savefig(plot_path)
-        # plt.savefig(f"{plot_path}e{e+1}_tls_delay.png")
-    plt.close()
-
-################# save #######################
-def save_data_train_upper(agent_upper, agent_lower):
-    ''' save objective, reward, penalty, throughput along the training process of upper agents
-    '''
-    data_train = {}
-
-    ## upper
-    # data_train['obj_epis'] = agent_upper.cul_obj #obj_epis
-    # data_train['reward_epis'] = agent_upper.cul_reward #reward_epis
-    # data_train['penalty_epis'] = agent_upper.cul_penalty #
-    
-    # data_train['reward_epis_all'] = agent_upper.reward_epis_all #
-    # data_train['penalty_epis_all'] = agent_upper.penalty_epis_all #
-
-    # # data_train['throughput_epis'] = agent_upper.throughput_episode# throughput_epis
-    # data_train['accu_epis'] = agent_upper.accu_episode# accu_epis
-    # data_train['flow_epis'] = agent_upper.flow_episode# 
-    # data_train['speed_epis'] = agent_upper.speed_episode# 
-    # data_train['TTD_epis'] = agent_upper.TTD_episode# 
-    # data_train['PN_waiting_episode'] = agent_upper.PN_waiting_episode
-    # data_train['entered_vehs_episode'] = agent_upper.entered_vehs_episode
-
-    ''' upper-level  '''
-    if agent_upper.accu_crit_list:
-        agent_upper.record_epis['accu_crit_list'] = agent_upper.accu_crit_list# throughput_epis
-    if agent_upper.mfdpara_list:
-        agent_upper.record_epis['mfdpara_list'] = agent_upper.mfdpara_list# throughput_epis
-    
-    if agent_upper.peri_mode in ['DQN', 'DDPG', 'C_DQN']:
-        agent_upper.record_epis['critic_loss'] = agent_upper.critic.qloss_list # critic_loss
-        agent_upper.record_epis['last_critic_loss'] = agent_upper.critic.last_qloss_list # critic_loss
-    
-    ## save upper level
-    data_train['record_epis_upper'] = agent_upper.record_epis
-    data_train['best_epis_upper'] = agent_upper.best_epis
-    
-
-    ''' lower level '''
-    if agent_lower.mode =='OAM':
-        agent_lower.record_epis['critic_loss'] = agent_lower.critic.qloss_list
-        agent_lower.record_epis['last_critic_loss'] = agent_lower.critic.last_qloss_list
-
-    ## save lower level 
-    data_train['record_epis_lower'] = agent_lower.record_epis
-
-
-    ## save data 
-    save_dir = config['models_path_name'] + 'data_'+ config['mode'] +'_'+ agent_upper.peri_mode +'_'+ agent_lower.lower_mode +'.pkl'
-    with open(save_dir, 'wb') as f:
-        pickle.dump([data_train], f)
-
-    print('###### Data save: Success ######')
-    
 def save_config(config):
-    np.save(f"{config['models_path_name']}config.npy", config)
+    # np.save(f"{config['models_path_name']}config.npy", config)
+    # 每次运行的config与statistics保存在一起
+    filename = 'config.pkl'
+    stats_path = os.path.join(config['stats_path_name'], filename)
+    with open(stats_path, 'wb') as f:
+        pickle.dump(config, f)
+
 
 class Test:
     def __init__(self):
