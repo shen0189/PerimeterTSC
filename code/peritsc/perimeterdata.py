@@ -3,7 +3,7 @@ import traci
 from utils.utilize import config
 import xml.etree.cElementTree as ET
 import numpy as np
-
+import copy
 from typing import Dict, List, Union, Tuple
 
 
@@ -44,11 +44,12 @@ class Movement:
         self.stages: List[str] = []
 
         self.flow_rate = 0
-        self.green_start: Union[int, float, list] = 0       # list为使用time-slot方法时的存储方式
-        self.green_duration: Union[int, float, list] = 0
+        self.green_start: list = [0]
+        self.green_duration: list = [0]
+        self.fixed_gated_green = 0
         self.min_green = 0
         self.max_green = 0
-        self.yellow_start = []  # 用于slot-based
+        self.yellow_start = [0]  # 用于slot-based
         self.yellow_duration = 0
 
     def add_stage(self, stage_id: str):
@@ -80,14 +81,15 @@ class Connection:
         self.dir = direction
         self.movement = None
 
-        self.green_start: Union[int, float, list] = 0
-        self.green_duration: Union[int, float, list] = 0     # 用于生成signal_program
-        self.yellow_start = []          # 用于slot-based
+        self.green_start: list = [0]
+        self.green_duration: list = [0]
+        self.yellow_start: list = [0]          # 用于slot-based
         self.yellow_duration = 0
 
     def update_timing(self):
-        self.green_duration = self.movement.green_duration
-        self.green_start = self.movement.green_start
+        self.green_duration = copy.deepcopy(self.movement.green_duration)
+        self.green_start = copy.deepcopy(self.movement.green_start)
+        self.yellow_start = copy.deepcopy(self.movement.yellow_start)
 
 
 class Lane:
@@ -107,8 +109,8 @@ class Lane:
         self.vehicle_length = 0     # average vehicle length
         self.saturation_limit = 0
 
-        self.green_start: Union[int, float, list] = 0       # list为使用time-slot方法时的存储方式
-        self.green_duration: Union[int, float, list] = 0
+        self.green_start: list = [0]
+        self.green_duration: list = [0]
         self.min_green = 0
         self.max_green = 0
         self.yellow_duration = 0
@@ -161,7 +163,6 @@ class Intersection:
         self.stages: Dict[str, Stage] = {}
         self.generalized_cycle_num = 0
 
-
     def add_connection(self, new_con: Connection):
         if new_con.id not in self.connections:
             self.connections[new_con.id] = new_con
@@ -198,6 +199,19 @@ class Intersection:
         self.movements[new_movement_id].lanes[new_lane_id] = self.in_lanes[new_lane_id]
         self.connections[new_connection_id].movement = self.movements[new_movement_id]
         self.movements[new_movement_id].down_link = self.downLinks[new_downlink_id]
+
+    def reset_signal_settings(self):
+        for lane in self.in_lanes.values():
+            lane.green_start = []
+            lane.green_duration = []
+        for movement in self.movements.values():
+            movement.green_start = []
+            movement.green_duration = []
+            movement.yellow_start = []
+        for connection in self.connections.values():
+            connection.green_start = []
+            connection.green_duration = []
+            connection.yellow_start = []
 
 
 class PeriSignals:
@@ -266,9 +280,9 @@ class PeriSignals:
                                                                           new_downstream_link)
 
         # Add stages for slot-based control
-        if self.phase_mode == 'Slot_based':
+        if self.phase_mode == 'Slot':
             for peri_signal_id, peri_signal in self.peri_signals.items():
-                for stage_id, stage_movements in self.peri_info[peri_signal_id]['slot_stage_plan']:
+                for stage_id, stage_movements in self.peri_info[peri_signal_id]['slot_stage_plan'].items():
                     new_stage = Stage(stage_id, peri_signal_id, stage_movements)
                     peri_signal.add_stage(new_stage)
                     for movement_id in stage_movements:
@@ -313,7 +327,7 @@ class PeriSignals:
         # Add timing parameters
         for peri_signal in self.peri_signals.values():
             peri_signal.cycle = config['cycle_time']
-            if self.phase_mode == 'Slot_based':
+            if self.phase_mode == 'Slot':
                 peri_signal.generalized_cycle_num = config['slot_merge_cycle_num']
             for movement in peri_signal.movements.values():
                 movement.min_green = config['min_green']
@@ -347,7 +361,7 @@ class PeriSignals:
             for movement_id, movement in peri_signal.movements.items():
                 if movement.type == 'inflow' and movement_id[-1] != 'r':    # 排除右转
                     signal_movement = '_'.join((peri_signal_id, movement_id))
-                    green = np.around(movement.green_duration)
+                    green = np.around(sum(movement.green_duration))
                     green_time_dict[signal_movement] = green
         return green_time_dict
 
@@ -408,56 +422,105 @@ class PeriSignals:
             program_dict = {}
             current_state, current_state_duration = '', 1
 
-            if self.phase_mode == 'Slot_based':
-                general_cycle = signal.cycle * signal.generalized_cycle_num
-                for i in range(int(general_cycle)):
-
-                    pass
+            if self.phase_mode == 'Slot':
+                cycle_length = signal.cycle * signal.generalized_cycle_num
             else:
-                for i in range(int(signal.cycle)):
-                    green_idx, yellow_idx = [], []
-                    # new_state = 'r' * len(signal.connections)
-                    for connection_id, connection in signal.connections.items():
-                        inform = connection_id.split('_')
-                        idx = int(inform[-1]) + int(inform[-2])
-                        start, duration = connection.green_start, connection.green_duration
-                        yellow = connection.yellow_duration
+                cycle_length = signal.cycle
+            for i in range(cycle_length):
+                green_idx, yellow_idx = [], []
+                for connection_id, connection in signal.connections.items():
+                    inform = connection_id.split('_')
+                    idx = int(inform[-1]) + int(inform[-2])
+                    yellow = connection.yellow_duration
+                    for (start, duration) in zip(connection.green_start, connection.green_duration):
                         if start <= i < start + duration:
                             green_idx.append(idx)
-                            # new_state[idx] = 'G'
                         elif start + duration <= i < start + duration + yellow:
                             yellow_idx.append(idx)
-                            # new_state[idx] = 'y'
-                    new_state = ''
-                    for j in range(len(signal.connections)):
-                        if j in green_idx:
-                            new_state += 'G'
-                        elif j in yellow_idx:
-                            new_state += 'y'
-                        else:
-                            new_state += 'r'
-                    if new_state == current_state:
-                        current_state_duration += 1
+                new_state = ''
+                for j in range(len(signal.connections)):
+                    if j in green_idx:
+                        new_state += 'G'
+                    elif j in yellow_idx:
+                        new_state += 'y'
                     else:
-                        if i > 0:  # Do not update at the beginning
-                            if current_state in program_dict:
-                                program_dict[current_state] += current_state_duration
-                            else:
-                                program_dict[current_state] = current_state_duration
-                        current_state, current_state_duration = new_state, 1
-                if current_state in program_dict:       # Final state
-                    program_dict[current_state] += current_state_duration
+                        new_state += 'r'
+                if new_state == current_state:
+                    current_state_duration += 1
                 else:
-                    program_dict[current_state] = current_state_duration
-                peri_program_dict[signal_id] = program_dict
-                # print(f'Signal program of {signal_id}: {program_dict}')
+                    if i > 0:  # Do not update at the beginning
+                        if current_state in program_dict:
+                            program_dict[current_state] += current_state_duration
+                        else:
+                            program_dict[current_state] = current_state_duration
+                    current_state, current_state_duration = new_state, 1
+            if current_state in program_dict:  # Final state
+                program_dict[current_state] += current_state_duration
+            else:
+                program_dict[current_state] = current_state_duration
+            peri_program_dict[signal_id] = program_dict
+
+            #     # 嵌套周期结构
+            #     general_cycle = signal.cycle * signal.generalized_cycle_num
+            #     for i in range(int(general_cycle)):
+            #         green_idx, yellow_idx = [], []
+            #         for connection_id, connection in signal.connections.items():
+            #             inform = connection_id.split('_')
+            #             idx = int(inform[-1]) + int(inform[-2])
+            #             for ()
+            #
+            #
+            #
+            #         pass
+            # else:
+            #     # 常规周期结构
+            #     for i in range(int(signal.cycle)):
+            #         green_idx, yellow_idx = [], []
+            #         # new_state = 'r' * len(signal.connections)
+            #         for connection_id, connection in signal.connections.items():
+            #             inform = connection_id.split('_')
+            #             idx = int(inform[-1]) + int(inform[-2])
+            #             start, duration = connection.green_start, connection.green_duration
+            #             yellow = connection.yellow_duration
+            #             if start <= i < start + duration:
+            #                 green_idx.append(idx)
+            #                 # new_state[idx] = 'G'
+            #             elif start + duration <= i < start + duration + yellow:
+            #                 yellow_idx.append(idx)
+            #                 # new_state[idx] = 'y'
+            #         new_state = ''
+            #         for j in range(len(signal.connections)):
+            #             if j in green_idx:
+            #                 new_state += 'G'
+            #             elif j in yellow_idx:
+            #                 new_state += 'y'
+            #             else:
+            #                 new_state += 'r'
+            #         if new_state == current_state:
+            #             current_state_duration += 1
+            #         else:
+            #             if i > 0:  # Do not update at the beginning
+            #                 if current_state in program_dict:
+            #                     program_dict[current_state] += current_state_duration
+            #                 else:
+            #                     program_dict[current_state] = current_state_duration
+            #             current_state, current_state_duration = new_state, 1
+            #     if current_state in program_dict:       # Final state
+            #         program_dict[current_state] += current_state_duration
+            #     else:
+            #         program_dict[current_state] = current_state_duration
+            #     peri_program_dict[signal_id] = program_dict
+            #     # print(f'Signal program of {signal_id}: {program_dict}')
 
         return peri_program_dict
 
     def print_program(self):
         for signal_id, signal in self.peri_signals.items():
-            print(f'Signal plan of signal {signal_id}:')
-            for movement_id, movement in signal.movements.items():
-                green_start, green_dur = movement.green_start, movement.green_duration
-                green_end = green_start + green_dur
-                print(f'Movement {movement_id} green starts at {green_start} and ends at {green_end}.')
+            if self.phase_mode == 'Slot':
+                print(f'Signal plan of signal {signal_id}:')
+                for movement_id, movement in signal.movements.items():
+                    green_start, green_dur = movement.green_start, movement.green_duration
+                    green_end = green_start + green_dur
+                    print(f'Movement {movement_id} green starts at {green_start} and ends at {green_end}.')
+            else:
+                print('To be implemented')
