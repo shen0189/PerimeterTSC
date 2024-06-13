@@ -759,8 +759,8 @@ class MaxPressure(LowerAgents):
 
 class FixTime(LowerAgents):
 
-    def __init__(self, tsc, netdata):
-        super().__init__(tsc, netdata)
+    def __init__(self, tsc, netdata, peridata):
+        super().__init__(tsc, netdata, peridata)
         self.program_id = '0'  if config['network'] == 'Grid' else 2
         # '2' -- acturated, max_dur = 90 sec
         # '3' -- acturated, max_dur = 45 sec
