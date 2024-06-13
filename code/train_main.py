@@ -478,7 +478,7 @@ else:
 if config['lower_mode'] == 'OAM':
     Agent_lower = OAM(tsc, netdata)
 elif config['lower_mode'] == 'FixTime':
-    Agent_lower = FixTime(tsc, netdata)
+    Agent_lower = FixTime(tsc, netdata, peridata)
 elif config['lower_mode'] == 'MaxPressure':
     Agent_lower = MaxPressure(tsc, netdata, peridata)
 
