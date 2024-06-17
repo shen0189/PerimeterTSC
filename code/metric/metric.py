@@ -292,15 +292,14 @@ class Metric():
         df_raw = pd.read_csv(file, sep=';', usecols=\
             ['edge_id', 'interval_end', 'edge_sampledSeconds', 'edge_entered', \
                 'edge_density','edge_speed', 'edge_waitingTime', 'edge_left'])
+        df_raw = df_raw.dropna(subset=['edge_id'])
+        df_raw['edge_id'] = df_raw['edge_id'].astype(int)
 
         ## 补充某interval没有车辆信息的edge
         edges, intervals = df_raw['edge_id'].unique(), df_raw['interval_end'].unique()
         complete_edge_data = pd.MultiIndex.from_product([edges, intervals], names=['edge_id', 'interval_end'])
         df_complete = pd.DataFrame(index=complete_edge_data).reset_index()
-        df_complete = df_complete.merge(df_raw, on=['edge_id', 'interval_end'], how='left').fillna(1e-5)
-
-        ## fill nan
-        df = df_complete.fillna(0.03)
+        df = df_complete.merge(df_raw, on=['edge_id', 'interval_end'], how='left').fillna(1e-5)
 
         ## get PN edges
         df_PN = df[df['edge_id'].isin(config['Edge_PN'])]
@@ -312,34 +311,18 @@ class Metric():
         ''' PN data'''
         ## sampledSeconds
         edge_sampledSeconds = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_sampledSeconds']].set_index('edge_id').T)
-        # 检查无数据的edge
-        recorded_edge = list(edge_sampledSeconds.columns)
-        missing_edge = []
-        for edge in config['Edge_PN']:
-            if edge not in recorded_edge:
-                missing_edge.append(edge)
-        # 补全edge
-        edge_sampledSeconds = pd.concat([edge_sampledSeconds, pd.DataFrame(columns=missing_edge)], sort=False)
-        # 补充缺失值
-        edge_sampledSeconds = edge_sampledSeconds.fillna(1e-5)
         edge_data['sampledSeconds'] = edge_sampledSeconds.to_numpy()
 
         ## density
         edge_density = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_density']].set_index('edge_id').T)
-        edge_density = pd.concat([edge_density, pd.DataFrame(columns=missing_edge)], sort=False)
-        edge_density = edge_density.fillna(1e-5)
         edge_data['density'] = edge_density.to_numpy()
         
         ## speed
         edge_speed = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_speed']].set_index('edge_id').T)
-        edge_speed = pd.concat([edge_speed, pd.DataFrame(columns=missing_edge)], sort=False)
-        edge_speed = edge_speed.fillna(13.89)
         edge_data['speed'] = edge_speed.to_numpy()
         
         ## waiting time
         edge_waitingTime = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_waitingTime']].set_index('edge_id').T)
-        edge_waitingTime = pd.concat([edge_waitingTime, pd.DataFrame(columns=missing_edge)], sort=False)
-        edge_waitingTime = edge_waitingTime.fillna(1e-5)
         edge_data['PN_waiting'] = edge_waitingTime.to_numpy()
             
         ''' buffer data'''
@@ -356,29 +339,19 @@ class Metric():
         ''' perimeter data'''
         ## get perimeter entered vehs
         peri_entered_vehs = df_peri.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_left']].set_index('edge_id').T)
-        peri_entered_vehs = peri_entered_vehs.fillna(1e-5)
-        # # TODO: 补充流量为0的数据
-        # first_recorded_interval_end = int(peri_entered_vehs.index[0])
-        # new_interval_end = 100
-        # while new_interval_end < first_recorded_interval_end:
-        #     new_record =
-        #     peri_entered_vehs = pd.concat()
         edge_data['peri_entered_vehs'] = peri_entered_vehs.to_numpy()
 
         ## get perimeter left vehs
         peri_outflow_vehs = df_peri_out.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_entered']].set_index('edge_id').T)
-        peri_outflow_vehs = peri_outflow_vehs.fillna(1e-5)
         edge_data['peri_outflow_vehs'] = peri_outflow_vehs.to_numpy()
 
         ## get perimeter waiting times
         # total waiting time on each perimeter links
         peri_waitingTime_tot = df_peri.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_waitingTime']].set_index('edge_id').T)
-        peri_waitingTime_tot = peri_waitingTime_tot.fillna(1e-5)
         edge_data['peri_waiting_tot'] = peri_waitingTime_tot.to_numpy()        
 
         # average number of vehs on each perimeter links
         peri_veh_num = df_peri.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_sampledSeconds']].set_index('edge_id').T)
-        peri_veh_num = peri_veh_num.fillna(1)
         edge_data['peri_sampledSeconds'] = peri_veh_num.to_numpy()        
 
         return edge_data
@@ -398,16 +371,14 @@ class Metric():
         # df = pd.read_csv(file, sep=';')
         df = pd.read_csv(file, sep=';', usecols=\
             ['edge_id','interval_begin','edge_waitingTime', 'edge_left', 'edge_sampledSeconds'])
+        df = df.dropna(subset=['edge_id'])
+        df['edge_id'] = df['edge_id'].astype(int).astype(str)
 
         ## 2. fill na
         # df['lane_id'].fillna(-1, inplace=True)
         # df['lane_queueing_time'].fillna(0, inplace=True)
-        df_fill = pd.DataFrame(product(np.arange(0,config['max_steps'],5, dtype=float), self.netdata['edge'].keys()), columns=['interval_begin', 'edge_id'])
-        df['edge_id'] = df['edge_id'].astype(str)
-        df = df_fill.merge( df, on=['interval_begin', 'edge_id'], how='left')
-        df['edge_waitingTime'].fillna(0, inplace=True)
-        df['edge_left'].fillna(0, inplace=True)
-        df['edge_sampledSeconds'].fillna(0, inplace=True)
+        df_complete = pd.DataFrame(product(np.arange(0, config['max_steps'], 5, dtype=float), self.netdata['edge'].keys()), columns=['interval_begin', 'edge_id'])
+        df = df_complete.merge(df, on=['interval_begin', 'edge_id'], how='left').fillna(1e-5)
 
         ## 3. process data
         lane_data = {}
@@ -424,8 +395,6 @@ class Metric():
 
         lane_data['network_perveh_delay_step'] = agg_df['step_waiting_time'].to_numpy()
         lane_data['network_perveh_delay_mean'] = agg_df['edge_waitingTime'].sum() /agg_df['edge_sampledSeconds'].sum() # per second
-
-
 
         ''' 2.1 Node delay for each step'''
         df['ToNode'] = df['edge_id'].apply(lambda x: self.netdata['edge'][x]['incnode']) # add attribute of ToNode
@@ -460,7 +429,6 @@ class Metric():
             ToNode_sampledSeconds_dict[col] = df_sampledSeconds1[col].to_numpy()
 
         lane_data['ToNode_sampledSeconds_step'] = ToNode_sampledSeconds_dict
-
 
         return lane_data
 
