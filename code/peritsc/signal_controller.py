@@ -271,13 +271,13 @@ class PeriSignalController:
             # extract the optimal solution
             for signal_id, signal in self.peri_data.peri_signals.items():
                 for movement_id, movement in signal.movements.items():
-                    movement.green_start = int(movement_green_start[signal_id][movement_id].x)
-                    movement.green_duration = int(movement_green_dur[signal_id][movement_id].x)
+                    movement.green_start = [int(movement_green_start[signal_id][movement_id].x)]
+                    movement.green_duration = [int(movement_green_dur[signal_id][movement_id].x)]
                     # if movement.type == 'inflow' and movement_id[-1] != 'r':
                     #     print(f'The green duration of movement {movement_id} is {movement.green_duration}')
                 for lane_id, lane in signal.in_lanes.items():
-                    lane.green_start = int(lane_green_start[signal_id][lane_id].x)
-                    lane.green_duration = int(lane_green_dur[signal_id][lane_id].x)
+                    lane.green_start = [int(lane_green_start[signal_id][lane_id].x)]
+                    lane.green_duration = [int(lane_green_dur[signal_id][lane_id].x)]
                 for connection in signal.connections.values():
                     connection.update_timing()
             # check the real inflow
@@ -300,11 +300,11 @@ class PeriSignalController:
             print("No solution found in this step!")
             return 0
 
-
     # 双层分布式迭代求解框架
     def inflow_local_iteration(self):
         '''
         迭代进行分配绿灯时长-确定边界交叉口具体配时的过程，以边界流入量、边界排队方差、交叉口吞吐量之和的变化作为收敛标准
+        返回模型计算的inflow值
         '''
         print('----------Signal optimization begins------------')
         epsilon, iteration = 1, 0
@@ -436,7 +436,7 @@ class PeriSignalController:
                         name=constr_name_attach(signal_id, lane_id, 'green_discharge'))
             # print(f'The green start of lane {lane_id} is {lane.green_start}')
             m.addConstr(lane_green_demand[lane_id] == lane.queue + lane.arrival_rate * (
-                    lane.green_start + lane_green_dur[lane_id]),
+                    lane.green_start[0] + lane_green_dur[lane_id]),
                         name=constr_name_attach(signal_id, lane_id, 'green_demand'))
             if config['peri_green_start_model']:
                 m.addConstr(lane_throughput[lane_id] == gp.min_(lane_green_discharge[lane_id], lane_green_demand[lane_id]),
@@ -456,7 +456,7 @@ class PeriSignalController:
                     m.addConstr(movement_green_dur[movement_id] <= config['max_green'],
                                 name=constr_name_attach(signal_id, movement_id, 'max_green'))
                 m.addConstr(movement_green_dur[movement_id] >= config['min_green'],
-                            name=constr_name_attach(signal_id, movement_id, 'max_green'))
+                            name=constr_name_attach(signal_id, movement_id, 'min_green'))
             # Constraint 5: Match the signal timing of movement and lane
             for movement_id, movement in lane.movements.items():
                 # print(f'Combine green time of lane {lane_id} and movement {movement_id}')
@@ -484,9 +484,9 @@ class PeriSignalController:
             # extract the optimal solution
             for _, lane_id in self.peri_data.peri_inflow_lanes:
                 lane = self.peri_data.peri_inflow_lanes_by_laneID[lane_id]
-                lane.green_duration = int(lane_green_dur[lane_id].x)
+                lane.green_duration = [round(lane_green_dur[lane_id].x)]
                 for movement_id, movement in lane.movements.items():
-                    movement.green_duration = int(movement_green_dur[movement_id].x)
+                    movement.fixed_gated_green = round(movement_green_dur[movement_id].x)
                     for connection_id, connection in movement.connections.items():
                         connection.update_timing()
             # console output
@@ -585,7 +585,7 @@ class PeriSignalController:
                 m.addConstr(movement_green_dur[movement_id] <= config['max_green'],
                             name=constr_name_attach(signal_id, movement_id, 'max_green'))
                 m.addConstr(movement_green_dur[movement_id] >= config['min_green'],
-                            name=constr_name_attach(signal_id, movement_id, 'max_green'))
+                            name=constr_name_attach(signal_id, movement_id, 'min_green'))
             # Constraint 4: Phase order (Signal timing of movement)
             # Constraint 4.1: Phase order for NEMA
             if self.signal_phase_mode == 'NEMA':
@@ -651,9 +651,9 @@ class PeriSignalController:
                                 name=constr_name_attach(signal_id, lane_id, 'lane_green_start'))
             # Constraint 7: Fixed the green duration of the inflow movements
             for movement_id, movement in signal.movements.items():
-                if movement.type == 'inflow':
-                    print(f'The green duration of movement {movement_id} is {movement.green_duration}')
-                    m.addConstr(movement_green_dur[movement_id] == movement.green_duration,
+                if movement.type == 'inflow' and movement_id[-1] != 'r':
+                    print(f'The fixed green of gated movement {movement_id} is {movement.fixed_gated_green}')
+                    m.addConstr(movement_green_dur[movement_id] == movement.fixed_gated_green,
                                 name=constr_name_attach(signal_id, movement_id, 'inflow_fixed_green_duration'))
 
             m.optimize()
@@ -664,18 +664,18 @@ class PeriSignalController:
                 perimeter_total_throughput += throughput_result
                 # extract the optimal solution
                 for movement_id, movement in signal.movements.items():
-                    movement.green_start = int(movement_green_start[movement_id].x)
-                    movement.green_duration = int(movement_green_dur[movement_id].x)
+                    movement.green_start = [round(movement_green_start[movement_id].x)]
+                    movement.green_duration = [round(movement_green_dur[movement_id].x)]
                 for lane_id, lane in signal.in_lanes.items():
-                    lane.green_start = int(lane_green_start[lane_id].x)
-                    lane.green_duration = int(lane_green_dur[lane_id].x)
+                    lane.green_start = [round(lane_green_start[lane_id].x)]
+                    lane.green_duration = [round(lane_green_dur[lane_id].x)]
                 for connection in signal.connections.values():
                     connection.update_timing()
             elif m.status == gp.GRB.INFEASIBLE:
-                # m.computeIIS()
-                # for c in m.getConstrs():
-                #     if c.IISConstr:
-                #         print(c)
+                m.computeIIS()
+                for c in m.getConstrs():
+                    if c.IISConstr:
+                        print(c)
                 # m.write('infeasible.ilp')
                 print("The lower level problem is infeasible. ")
             elif m.status == gp.GRB.UNBOUNDED:
@@ -688,10 +688,9 @@ class PeriSignalController:
 
 class TimeSlotPeriSignalController(PeriSignalController):
 
-    def __init__(self, peri_data: PeriSignals, action: float, slot_num: int, cycle_num: int):
+    def __init__(self, peri_data: PeriSignals, action: float, slot_num: int):
         super(TimeSlotPeriSignalController, self).__init__(peri_data, action)
         self.time_slot_num = slot_num
-        self.cycle_num = cycle_num          # 大周期（Slot-based的实际周期）所包含的小周期（基础cycle）的个数
 
     # 重写分布式各交叉口slot-based配时确定方法
     def set_local_green(self):
@@ -720,12 +719,15 @@ class TimeSlotPeriSignalController(PeriSignalController):
             slot_green_duration: List[gp.Var] = []  # green duration of each slot
             slot_stage_selection: Dict[str, List[gp.Var]] = {}
             slot_movement_selection: Dict[str, List[gp.Var]] = {}
-            slot_movement_merge: Dict[str, List[gp.Var]] = {}
+            succ_slot_movement_selection: Dict[str, List[gp.Var]] = {}
+            slot_movement_no_merge: Dict[str, List[gp.Var]] = {}
             slot_movement_green_duration: Dict[str, List[gp.Var]] = {}
             slot_lane_selection: Dict[str, List[gp.Var]] = {}
             slot_lane_queue: Dict[str, List[gp.Var]] = {}       # The lane queue at the end of each time slot
             slot_lane_throughput: Dict[str, List[gp.Var]] = {}  # The real throughput within each time slot
             slot_lane_green_throughput: Dict[str, List[gp.Var]] = {}
+            slot_lane_green_demand: Dict[str, List[gp.Var]] = {}
+            slot_lane_green_sfr: Dict[str, List[gp.Var]] = {}
             slot_lane_green_duration: Dict[str, List[gp.Var]] = {}
             lane_throughput: Dict[str, gp.Var] = {}
 
@@ -741,22 +743,32 @@ class TimeSlotPeriSignalController(PeriSignalController):
                 for movement_id in signal.movements.keys():
                     var_slot_movement = m.addVar(vtype=gp.GRB.BINARY,
                                                  name=constr_name_attach('slot' + str(i), movement_id, 'movement'))
-                    var_slot_movement_merge = m.addVar(vtype=gp.GRB.BINARY,
+                    var_succ_slot_movement = m.addVar(vtype=gp.GRB.BINARY,
+                                                      name=constr_name_attach('slot' + str(i), movement_id, 'succ'))
+                    var_slot_movement_no_merge = m.addVar(vtype=gp.GRB.BINARY,
                                                        name=constr_name_attach('slot' + str(i), movement_id, 'merge'))
                     var_slot_movement_green_dur = m.addVar(lb=0,
                                                            name=constr_name_attach('slot' + str(i), movement_id, 'green'))
                     slot_movement_selection.setdefault(movement_id, []).append(var_slot_movement)
-                    slot_movement_merge.setdefault(movement_id, []).append(var_slot_movement_merge)
+                    succ_slot_movement_selection.setdefault(movement_id, []).append(var_succ_slot_movement)
+                    slot_movement_no_merge.setdefault(movement_id, []).append(var_slot_movement_no_merge)
                     slot_movement_green_duration.setdefault(movement_id, []).append(var_slot_movement_green_dur)
                 for lane_id in signal.in_lanes.keys():
+                    var_slot_lane_selection = m.addVar(vtype=gp.GRB.BINARY,
+                                                       name=constr_name_attach('slot' + str(i), lane_id, 'lane'))
                     var_slot_queue = m.addVar(lb=0, name=constr_name_attach('slot'+str(i), lane_id, 'queue'))
                     var_slot_throughput = m.addVar(lb=0, name=constr_name_attach('slot'+str(i), lane_id, 'throughput'))     # 真实output
                     var_slot_green_throughput = m.addVar(
                         lb=0, name=constr_name_attach('slot'+str(i), lane_id, 'green_throughput'))      # 如果是绿灯的output
+                    var_slot_green_demand = m.addVar(lb=0, name=constr_name_attach('slot'+str(i), lane_id, 'green_demand'))
+                    var_slot_green_sfr = m.addVar(lb=0, name=constr_name_attach('slot' + str(i), lane_id, 'green_sfr'))
                     var_slot_lane_green_dur = m.addVar(lb=0, name=constr_name_attach('slot' + str(i), lane_id, 'green'))
+                    slot_lane_selection.setdefault(lane_id, []).append(var_slot_lane_selection)
                     slot_lane_queue.setdefault(lane_id, []).append(var_slot_queue)
                     slot_lane_throughput.setdefault(lane_id, []).append(var_slot_throughput)
                     slot_lane_green_throughput.setdefault(lane_id, []).append(var_slot_green_throughput)
+                    slot_lane_green_demand.setdefault(lane_id, []).append(var_slot_green_demand)
+                    slot_lane_green_sfr.setdefault(lane_id, []).append(var_slot_green_sfr)
                     slot_lane_green_duration.setdefault(lane_id, []).append(var_slot_lane_green_dur)
             for lane_id in signal.in_lanes.keys():
                 var_throughput = m.addVar(lb=0, name=constr_name_attach(lane_id, 'throughput'))
@@ -788,16 +800,19 @@ class TimeSlotPeriSignalController(PeriSignalController):
             # Constraint 2: Throughput of each time slot
             for i in range(self.time_slot_num):
                 for lane_id, lane in signal.in_lanes.items():
+                    m.addConstr(slot_lane_green_sfr[lane_id][i] == slot_green_duration[i] * lane.saturation_flow_rate,
+                                name=constr_name_attach('slot' + str(i), lane_id, 'green_sfr'))
                     if i == 0: # The first time slot
-                        m.addConstr(slot_lane_green_throughput[lane_id][i] == gp.min_(
-                            slot_green_duration[i] * lane.saturation_flow_rate,
-                            lane.queue + lane.arrival_rate * slot_green_duration[i]),
-                                    name=constr_name_attach('slot' + str(i), lane_id, 'green_throughput'))
+                        m.addConstr(slot_lane_green_demand[lane_id][i] == lane.queue +
+                                    lane.arrival_rate * slot_green_duration[i],
+                                    name=constr_name_attach('slot' + str(i), lane_id, 'green_demand'))
                     else:
-                        m.addConstr(slot_lane_green_throughput[lane_id][i] == gp.min_(
-                            slot_green_duration[i] * lane.saturation_flow_rate,
-                            slot_lane_queue[lane_id][i] + lane.arrival_rate * slot_green_duration[i]),
-                                    name=constr_name_attach('slot' + str(i), lane_id, 'green_throughput'))
+                        m.addConstr(slot_lane_green_demand[lane_id][i] == slot_lane_queue[lane_id][i] +
+                                    lane.arrival_rate * slot_green_duration[i],
+                                    name=constr_name_attach('slot' + str(i), lane_id, 'green_demand'))
+                    m.addConstr(slot_lane_green_throughput[lane_id][i] == gp.min_(
+                        slot_lane_green_demand[lane_id][i], slot_lane_green_sfr[lane_id][i]),
+                                name=constr_name_attach('slot' + str(i), lane_id, 'green_throughput'))
                     m.addConstr(slot_lane_throughput[lane_id][i] <= M * slot_lane_selection[lane_id][i],
                                 name=constr_name_attach('slot' + str(i), lane_id, 'red_output1'))
                     m.addConstr(slot_lane_throughput[lane_id][i] >= -M * slot_lane_selection[lane_id][i],
@@ -850,8 +865,9 @@ class TimeSlotPeriSignalController(PeriSignalController):
             # Constraint 9: Signal light merge indicator
             for i in range(self.time_slot_num - 1):
                 for movement_id, movement in signal.movements.items():
-                    m.addConstr(1 - slot_movement_merge[movement_id][i] == gp.abs_(
-                        slot_movement_selection[movement_id][i] - slot_movement_selection[movement_id][i + 1]),
+                    m.addConstr(succ_slot_movement_selection[movement_id][i] == slot_movement_selection[movement_id][i] - slot_movement_selection[movement_id][i + 1],
+                                name=constr_name_attach('slot' + str(i), movement_id, 'succ'))
+                    m.addConstr(slot_movement_no_merge[movement_id][i] == gp.abs_(succ_slot_movement_selection[movement_id][i]),
                                 name=constr_name_attach('slot' + str(i), movement_id, 'merge'))
             # Constraint 10: The green time sequence
             for i in range(self.time_slot_num - 1):
@@ -860,7 +876,7 @@ class TimeSlotPeriSignalController(PeriSignalController):
             # Constraint 11: Boundary
             m.addConstr(slot_green_start[0] == 0, name='first_slot_green_start')
             m.addConstr(slot_green_start[self.time_slot_num - 1] + slot_green_duration[
-                self.time_slot_num - 1] == self.cycle_num * signal.cycle,
+                self.time_slot_num - 1] == signal.cycle,
                         name='last_slot_green_end')
             # Constraint 12: Minimum green
             for i in range(self.time_slot_num):
@@ -879,18 +895,18 @@ class TimeSlotPeriSignalController(PeriSignalController):
                     # Right-of-way movement
                     if i < self.time_slot_num - 1:      # Merged slot have no yellow time
                         m.addConstr(slot_movement_green_duration[movement_id][i] - slot_green_duration[i] <= M * (
-                            2 - slot_movement_merge[movement_id][i] - slot_movement_selection[movement_id][i]),
+                            1 - slot_movement_no_merge[movement_id][i] - slot_movement_selection[movement_id][i]),
                                     name=constr_name_attach('slot' + str(i), movement_id, 'merge_green1'))
                         m.addConstr(slot_movement_green_duration[movement_id][i] - slot_green_duration[i] >= -M * (
-                            2 - slot_movement_merge[movement_id][i] - slot_movement_selection[movement_id][i]),
+                            1 - slot_movement_no_merge[movement_id][i] - slot_movement_selection[movement_id][i]),
                                     name=constr_name_attach('slot' + str(i), movement_id, 'merge_green2'))
                         m.addConstr(
                             slot_movement_green_duration[movement_id][i] - slot_green_duration[i] + yellow <= M * (
-                                slot_movement_merge[movement_id][i] + 1 - slot_movement_selection[movement_id][i]),
+                                2 - slot_movement_no_merge[movement_id][i] - slot_movement_selection[movement_id][i]),
                             name=constr_name_attach('slot' + str(i), movement_id, 'unmerge_green1'))
                         m.addConstr(
                             slot_movement_green_duration[movement_id][i] - slot_green_duration[i] + yellow >= -M * (
-                                slot_movement_merge[movement_id][i] + 1 - slot_movement_selection[movement_id][i]),
+                                2 - slot_movement_no_merge[movement_id][i] - slot_movement_selection[movement_id][i]),
                             name=constr_name_attach('slot' + str(i), movement_id, 'unmerge_green2'))
                     else:       # The last slot always have yellow time (can be improved)
                         m.addConstr(
@@ -910,7 +926,7 @@ class TimeSlotPeriSignalController(PeriSignalController):
             # Constraint 14: Fixed the duration of inflow movement
             for movement_id, movement in signal.movements.items():
                 if movement.type == 'inflow':
-                    m.addConstr(gp.quicksum(slot_movement_green_duration[movement_id]) == movement.green_duration,
+                    m.addConstr(gp.quicksum(slot_movement_green_duration[movement_id]) == movement.fixed_gated_green,
                                 name=constr_name_attach(movement_id, 'inflow_fixed_green_duration'))
 
             m.optimize()
@@ -919,31 +935,25 @@ class TimeSlotPeriSignalController(PeriSignalController):
                 # get the objective value
                 throughput_result = total_throughput.x
                 perimeter_total_throughput += throughput_result
+                # reset signal settings
+                signal.reset_signal_settings()
                 # extract the optimal solution
                 for i in range(self.time_slot_num):
                     green_start = slot_green_start[i].x
                     for movement_id, movement in signal.movements.items():
                         # get the green time for the right-of-way movements
                         if slot_movement_selection[movement_id][i].x == 1:
-                            if not isinstance(movement.green_start, list):
-                                movement.green_start = []
                             movement.green_start.append(green_start)
                             green_duration = slot_movement_green_duration[movement_id][i].x
-                            if not isinstance(movement.green_duration, list):
-                                movement.green_duration = []
                             movement.green_duration.append(green_duration)
-                            # get the yellow time for the end of the right-of-way movements
-                            if slot_movement_merge[movement_id][i].x == 0:
+                            # get the yellow start time for the end of the right-of-way movements
+                            if slot_movement_no_merge[movement_id][i].x == 1:
                                 movement.yellow_start.append(green_start + green_duration)
                     for lane_id, lane in signal.in_lanes.items():
                         # get the green time for the right-of-way lanes
                         if slot_lane_selection[lane_id][i].x == 1:
-                            if not isinstance(lane.green_start, list):
-                                lane.green_start = []
                             lane.green_start.append(green_start)
                             green_duration = slot_lane_green_duration[lane_id][i].x
-                            if not isinstance(lane.green_duration, list):
-                                lane.green_duration = []
                             lane.green_duration.append(green_duration)
                     for connection in signal.connections.values():
                         connection.update_timing()
@@ -975,37 +985,3 @@ if __name__ == '__main__':
     peridata.get_conflict_matrix()
 
 
-
-    cycle = 100
-    total_flow = 0
-    # # conflict_matrix = np.array([[0, 0, 0, 0, 0, 0],
-    # #                             [0, 0, 0, 0, 0, 0],
-    # #                             [0, 0, 0, 0, 0, 0],
-    # #                             [0, 0, 0, 0, 0, 0],
-    # #                             [0, 0, 0, 0, 0, 0],
-    # #                             [0, 0, 0, 0, 0, 0]], np.int32)  # 交叉口A直/左 交叉口B直/左 交叉口C直 交叉口D直
-    # sfr_array = np.array([1200] * 6, np.int32).reshape(-1, 1) / 3600  # in veh/s
-    # demand_array = np.array([300] * 6, np.int32).reshape(-1, 1) / 3600  # in veh/s
-    # queue_array = np.array([5, 10, 15] * 2, np.int32).reshape(-1, 1)
-    #
-    # time_start = time.time()
-    # green_duration = gated_green_duration(cycle=cycle, total_inflow=total_flow,
-    #                                       gated_sfr=sfr_array, gated_demand=demand_array, initial_queue=queue_array,
-    #                                       min_green=10, max_green=50)
-    # green_duration = np.array([6, 49, 24, 5, 41, 44, 6, 49, 24]).T
-    # # standard_green_duration = np.array([1, 50, 24, 8, 41, 46]).T
-    # conflict_matrix = np.zeros((9, 9), np.int32)
-    # clearance_time = 5.0
-    # sfr_array = np.array([1600, 1800, 1600] * 3, np.int32).reshape(-1, 1) / 3600  # in veh/s
-    # green_start = gated_green_start(cycle=cycle, gated_sfr=sfr_array, green_duration=green_duration,
-    #                                 conflict_matrix=conflict_matrix, clearance_time=clearance_time)
-    # time_end = time.time()
-    # time_duration = time_end - time_start
-    # print("Calculation time: ", time_duration)
-    # print("Gated movement green duration: ", green_duration)
-    # print("Gated movement green start: ", green_start)
-    # # print("Gated movement green overlap: ", green_overlap)
-    # # print("gamma: ", g)
-    # # print("delta: ", d)
-    # # print("omega: ", o)
-    # # print("theta: ", t)
