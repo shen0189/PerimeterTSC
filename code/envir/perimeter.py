@@ -2,7 +2,7 @@ import traci
 import numpy as np
 from utils.utilize import config
 from peritsc.perimeterdata import PeriSignals
-from peritsc.signal_controller import PeriSignalController
+from peritsc.signal_controller import PeriSignalController, TimeSlotPeriSignalController
 from typing import Dict
 
 # EdgeCross = [33034, 53054]
@@ -21,6 +21,7 @@ class Peri_Agent():
         self.yellow_duration = config['yellow_duration']
         self.cycle_time = config['cycle_time']
         self.downedge_maxveh = config['max_queue']
+        self.slot_num = config['slot_number']
 
         # perimeter infos
         self.info = config['Peri_info']
@@ -150,15 +151,11 @@ class Peri_Agent():
                 signal.downLinks[downlink_id].update_state(queue)
 
         # 2. Optimize the signal plan of all perimeter intersections
-        controller = PeriSignalController(self.peridata, action)
+        if self.signal_phase_mode == 'Slot':
+            controller = TimeSlotPeriSignalController(self.peridata, action, self.slot_num)
+        else:
+            controller = PeriSignalController(self.peridata, action)
         estimate_inflow = controller.signal_optimize()
-
-        # # centralized method
-        # # set_inflow_local_green(peri_data=self.peridata, required_total_inflow=action)
-        #
-        # # decentralized method
-        # set_inflow_green(peri_data=self.peridata, required_total_inflow=action)
-        # set_local_green(peri_data=self.peridata)
 
         # 3. record green time data
         inflow_movement_green_time = self.peridata.get_inflow_green_duration()
@@ -199,30 +196,6 @@ class Peri_Agent():
             traci.trafficlight.setProgramLogic(signal_id, logic)
             # traci.trafficlight.setProgram(signal_id, logic.programID)
             traci.trafficlight.setPhase(signal_id, 0)
-
-        # for peri_id, peri in dict.items(self.info):
-        #     peri_edge = peri['edge']
-        #     peri_approaches = peri['in_edges']
-        #     gated_edge_idx = peri_approaches.index(peri_edge)
-        #
-        #     tsc = peri['tsc']
-        #     logic = tsc.logic
-        #     signal_plan = signal_plan_info[peri_id]
-        #     if signal_plan == -1:
-        #         print(f'Node {peri_id} failed to get optimal signal plan. ')
-        #         traci.trafficlight.setProgramLogic(peri_id, logic)  # use current program
-        #     else:
-        #         signal_program = plan2program(cycle=config['cycle_time'], green_start=signal_plan[0],
-        #                                       green_duration=signal_plan[1], clearance_time=config['yellow_duration'],
-        #                                       gated_idx=gated_edge_idx)
-        #         # set signal program
-        #         phases = []
-        #         for state, duration in signal_program.items():
-        #             phase = traci.trafficlight.Phase(duration, state)
-        #             phases.append(phase)
-        #         logic.phases = tuple(phases)
-        #         traci.trafficlight.setProgramLogic(peri_id, logic) # set the new program
-
 
 
     def switch_phase(self, steps):
