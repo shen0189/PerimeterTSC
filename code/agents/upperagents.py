@@ -497,7 +497,7 @@ class UpperAgents:
         # flow2
         flow_epis = np.mean(
             edge_data['speed'] * edge_data['density'] * 3.6, axis=1)  # veh/h
-        flow_epis = self._fill_metric_values(flow_epis)
+        # flow_epis = self._fill_metric_values(flow_epis)
         metric['flow'] = flow_epis
         # flow 3 bad
         # TTD = accu * mean_speed* 100  # nveh*m/sec*sec = veh*m
@@ -507,7 +507,7 @@ class UpperAgents:
         # accu
         accu_epis = np.sum(
             (edge_data['sampledSeconds'] / self.info_interval), axis=1)
-        accu_epis = self._fill_metric_values(accu_epis)
+        # accu_epis = self._fill_metric_values(accu_epis)
         metric['accu'] = accu_epis
 
         '''speed'''
@@ -515,30 +515,30 @@ class UpperAgents:
         weighted_speed = np.multiply(edge_data['speed'], np.array(
             self.PN_edge_length)[:, np.newaxis].T)
         speed_epis = np.sum(weighted_speed, axis=1)/sum(self.PN_edge_length)
-        speed_epis = self._fill_metric_values(speed_epis)
+        # speed_epis = self._fill_metric_values(speed_epis)
         metric['speed'] = speed_epis
 
         '''TTD'''
         # Total travel distance
         TTD_epis = np.sum(edge_data['sampledSeconds']
                           * edge_data['speed'], axis=1)/1e3  # (km)
-        TTD_epis = self._fill_metric_values(TTD_epis)
+        # TTD_epis = self._fill_metric_values(TTD_epis)
         metric['TTD'] = TTD_epis
 
         '''waiting_time'''
         # PN waiting time
         PN_waiting_epis = np.sum(edge_data['PN_waiting'], axis=1)
-        PN_waiting_epis = self._fill_metric_values(PN_waiting_epis)
+        # PN_waiting_epis = self._fill_metric_values(PN_waiting_epis)
         metric['PN_waiting'] = PN_waiting_epis
 
         '''entered_vehs'''
         peri_entered_vehs = np.sum(edge_data['peri_entered_vehs'], axis=1)
-        peri_entered_vehs = self._fill_metric_values(peri_entered_vehs)
+        # peri_entered_vehs = self._fill_metric_values(peri_entered_vehs)
         metric['peri_entered_vehs'] = peri_entered_vehs
 
         ''' outflow vehs '''
         peri_outflow_vehs = np.sum(edge_data['peri_outflow_vehs'], axis=1)
-        peri_outflow_vehs = self._fill_metric_values(peri_outflow_vehs)
+        # peri_outflow_vehs = self._fill_metric_values(peri_outflow_vehs, metric_name='outflow')
         metric['peri_outflow_vehs'] = peri_outflow_vehs
 
         ''' PN density heterogenity'''
@@ -689,10 +689,14 @@ class UpperAgents:
         """
         self.buffer.memorize(state, action, reward, done, new_state, penalty)
 
-    def _fill_metric_values(self, metric_field):
+    def _fill_metric_values(self, metric_field, metric_name=None):
         if len(metric_field) < len(self.estimated_inflow):
             len_short = len(self.estimated_inflow) - len(metric_field)
-            complete_field = np.concatenate([np.zeros(len_short), metric_field])
+            # TODO: 完善处理方式
+            if metric_name:     # outflow
+                complete_field = np.concatenate([np.zeros(len_short), metric_field])
+            else:
+                complete_field = np.concatenate([metric_field, np.zeros(len_short)])
         else:
             complete_field = metric_field
         return complete_field
