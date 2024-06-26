@@ -4,6 +4,8 @@ import pickle
 import numpy as np
 import os
 import matplotlib
+import matplotlib.axes._axes as axes
+import matplotlib.figure as figure
 matplotlib.use('Agg')
 
 ################# PLOT #######################
@@ -573,25 +575,36 @@ def plot_peri_feature_progression(config, feature_epis, e, n_jobs, feature_title
 
 def plot_peri_queue_progression(config, queue_epis: dict, e, n_jobs):
     """
-    plot the progression of queue length on each perimeter inflows
+    plot the progression of queue length on each perimeter inflows in a heatmap
     """
-    plt.xlabel('time')
-    plt.ylabel('queue length (m)')
-    plt.title('perimeter queue progression')
-    max_queue = 0
-    for inflow_id, inflow_queue in queue_epis.items():
-        plt.plot(range(len(inflow_queue)), inflow_queue, '-', label=inflow_id)
-        max_queue = max(max_queue, max(inflow_queue))
-    plt.ylim((0, max_queue * 1.2))
-    plt.legend()
+
+    inflow_label = list(queue_epis.keys())
+    queue_evolve = np.array(list(queue_epis.values()))
+
+    pixel_width = 0.5
+    fig_width = pixel_width * queue_evolve.shape[1]
+    fig_height = pixel_width * queue_evolve.shape[0]
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))    # type:figure.Figure, axes.Axes
+    cax = ax.imshow(queue_evolve, cmap='coolwarm', aspect='equal')
+    cbar = fig.colorbar(cax, ax=ax)     # 设置颜色条
+    cbar.set_label('Queue length (m)')
+    ax.set_xticks(np.arange(queue_evolve.shape[1]))
+    ax.set_xticklabels(np.arange(1, queue_evolve.shape[1] + 1))
+    ax.set_yticks(np.arange(queue_evolve.shape[0]))
+    ax.set_yticklabels(inflow_label)
+    ax.set_xlabel('Interval')
+    ax.set_ylabel('Gated links')
+    ax.set_aspect(aspect='equal', adjustable='box')
+    plt.tight_layout()
+
     if e % n_jobs == 0:
         file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_peri_queue.png"
         plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
-        plt.savefig(plot_path)
     else:
         file_name = f"e{e + 1}_peri_queue.png"
         plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
-        plt.savefig(plot_path)
+    plt.savefig(plot_path)
     plt.close()
 
 
