@@ -56,11 +56,12 @@ class TrafficGenerator():
 
                 ### 3. process the demand with noise and demand multiplier
                 Demand_Inter = Demand_Inter[:, 1:] * DemandType['Multiplier'] # multiplier
-                Demand_Inter = np.round(Demand_Inter * (np.random.normal(self.noise_mean, self.noise_variance, Demand_Inter.shape) + 1)) # [mean, variance, num]
+                Demand_Inter_noise = np.round(Demand_Inter * (np.random.normal(self.noise_mean, self.noise_variance, Demand_Inter.shape) + 1)) # [mean, variance, num]
                 
                 ### 4. record all intervals for each demayd type
-                DemandType['Demand_split'] = Demand_Inter
-                DemandType['Demand'].append(sum(Demand_Inter))
+                DemandType['Demand_split'] = Demand_Inter_noise
+                DemandType['Demand'].append(sum(Demand_Inter_noise))
+                DemandType['Demand_mean'] = sum(Demand_Inter)
             
 
             ### 5. write the demand
