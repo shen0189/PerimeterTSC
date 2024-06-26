@@ -8,7 +8,7 @@ import matplotlib.axes._axes as axes
 import matplotlib.figure as figure
 matplotlib.use('Agg')
 
-################# PLOT #######################
+################# PLOT WITHIN ONE EPISODE #######################
 def plot_MFD(config, accu, flow, aggregate_time, e, reward, n_jobs, reward_lower):
     ''' Plot MFD of each simulation
     '''
@@ -80,10 +80,10 @@ def plot_demand(config, demand_config, demand_interval_sec, demand_interval_tota
 
     for DemandType in demand_config:
         plt.plot(Demand_Interval,
-                 DemandType['Demand'][0],
+                 DemandType['Demand_mean'],
                  label=f"{DemandType['DemandType']}")
 
-    plt.legend(loc='center left')
+    plt.legend()
     # plt.show()
     plt.savefig(f"{config['plots_path_name']}Demand.png")
     plt.close()
