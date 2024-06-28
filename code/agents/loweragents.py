@@ -60,8 +60,9 @@ class LowerAgents:
         self.reward_norm = config['lower_reward_max']
        
         # record
-        self.metric_list = ['network_delay_step', 'network_perveh_delay_step',\
-            'tsc_delay_step', 'tsc_perveh_delay_step','tsc_perveh_delay_mean', 'tsc_through_step']
+        self.metric_list = ['network_delay_step', 'network_perveh_delay_step',
+            'tsc_delay_step', 'tsc_perveh_delay_step','tsc_perveh_delay_mean', 'tsc_through_step',
+                            'peri_throughput', 'peri_queue', 'peri_spillover', 'peri_delay']
 
         self.record_epis = {}
         for key in self.metric_list:
