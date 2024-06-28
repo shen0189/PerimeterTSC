@@ -1248,8 +1248,8 @@ class Static(UpperAgents):
     ''' Static with default plans
     '''
 
-    def __init__(self, tsc_peri, netdata):
-        super().__init__(tsc_peri, netdata)
+    def __init__(self, tsc_peri, netdata, peridata):
+        super().__init__(tsc_peri, netdata, peridata)
 
         # self.peri_mode = 'Static'
 
