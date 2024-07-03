@@ -12,6 +12,7 @@ from itertools import product
 import pandas as pd
 from typing import Dict
 from peritsc.perimeterdata import PeriSignals
+import itertools
 
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -443,34 +444,31 @@ class Metric():
         file = file.split('.')
         file = '.'.join([file[0], 'csv'])
 
-        # read csv and get base dataframe (two columns: interval and lane_id)
+        # get base dataframe (two columns: interval and lane_id)
+        lane_items = itertools.product(self.peri_controlled_links, range(0, 3))     # TODO: 从peridata获取
+        lanes = [f'{edge}_{lane}' for edge, lane in lane_items]
+        intervals = np.arange(0, config['max_steps'], 1, dtype=float)
+        df_complete = pd.DataFrame(product(intervals, lanes), columns=['data_timestep', 'lane_id'])
+
+        # process the csv and generate full df
         df = pd.read_csv(file, sep=';', usecols=['data_timestep', 'lane_id', 'lane_queueing_length'])
-        df_interval = df[df['data_timestep'] % step == 0]['data_timestep'].drop_duplicates()
-        df_edge = pd.DataFrame(self.peri_controlled_links, columns=['edge_id']).squeeze()
-        df_base = pd.DataFrame(product(df_interval, df_edge), columns=['interval', 'edge_id'])
-
-        # process the csv
-        df = df[df['lane_id'].notna()]      # 删除没有信息的行
-        df = df[df['lane_id'].str[0] != ":"]        # 删除内部lane
+        df = df[df['lane_id'].notna()]  # 删除没有信息的行
+        df = df[df['lane_id'].str[0] != ":"]  # 删除内部lane
+        df.rename(columns={'lane_queueing_length': 'queue'}, inplace=True)
+        df = df_complete.merge(df, on=['data_timestep', 'lane_id'], how='left').fillna(1e-5)
         df['edge_id'] = df['lane_id'].str.split('_').str[0].astype(int)
-        df_peri = df[df['edge_id'].isin(self.peri_controlled_links)]
-        df_peri = df_peri.fillna(0.)
-        # Case 1: get the queue length of the end of each interval (not used)
-        # df_peri_interval_end = df_peri[df_peri['data_timestep'] % step == 0]
-        # Case 2: get the maximum queue length within each interval
-        df_peri['interval'] = df_peri['data_timestep'] // 100 * 100
-        df_peri_max_queue = df_peri.groupby([df_peri['interval'], df_peri['edge_id']])['lane_queueing_length'].max()
-
-        # generate the dataframe
-        df_peri_full = pd.merge(df_base, df_peri_max_queue, on=['interval', 'edge_id'], how='left')
-        df_peri_full = df_peri_full.fillna(0.)
-        # df_queue = df_peri_full.groupby(['data_timestep', 'edge_id'])['lane_queueing_length'].mean()
-        df_queue = df_peri_full.reset_index()
+        df_queue_raw = df[df['edge_id'].isin(self.peri_controlled_links)]
+        # edge排队取所有lane的排队的平均值
+        df_queue_avg = df_queue_raw.groupby(['data_timestep', 'edge_id'], as_index=False)['queue'].mean()
+        df_queue_avg['interval'] = df_queue_avg['data_timestep'] // 100 * 100
+        # 每个interval的排队取interval内的最大排队
+        df_queue = df_queue_avg.groupby(['interval', 'edge_id'], as_index=False)['queue'].max()
+        df_queue = df_queue.reset_index()
 
         queue_data = {}
         # get the queue length of each peri inflow edge
         for edge in self.peri_controlled_links:
-            queue_list = list(df_queue[df_queue['edge_id'] == edge]['lane_queueing_length'])
+            queue_list = list(df_queue[df_queue['edge_id'] == edge]['queue'])
             queue_data[edge] = queue_list
 
         return queue_data
