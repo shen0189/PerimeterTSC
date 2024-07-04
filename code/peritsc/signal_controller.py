@@ -350,38 +350,17 @@ class PeriSignalController:
         m.setParam(gp.ParamConstClass.DualReductions, 0)
 
         # Variables
-        lane_final_queue: Dict[str, gp.Var] = {}
-        lane_final_queue_estimate: Dict[str, gp.Var] = {}       # 可能为负
-        lane_spillover: Dict[str, gp.Var] = {}      # 车道排队是否溢出
-        lane_relative_queue: Dict[str, gp.Var] = {}
-        movement_green_dur: Dict[str, gp.Var] = {}
-        lane_green_dur: Dict[str, gp.Var] = {}
-        lane_throughput: Dict[str, gp.Var] = {}
-        lane_green_discharge: Dict[str, gp.Var] = {}
-        lane_green_demand: Dict[str, gp.Var] = {}
-        # Add variables to each container
-        for _, lane_id in self.peri_data.peri_inflow_lanes:
-            var_queue = m.addVar(lb=0, name=constr_name_attach(lane_id, 'queue'))
-            var_queue_estimate = m.addVar(lb=-gp.GRB.INFINITY, name=constr_name_attach(lane_id, 'queue_estimate'))
-            var_spillover = m.addVar(vtype=gp.GRB.BINARY, name=constr_name_attach(lane_id, 'spillover'))
-            var_relative_queue = m.addVar(lb=0, name=constr_name_attach(lane_id, 'relative_queue'))
-            var_green_dur = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_duration'))
-            var_throughput = m.addVar(lb=0, name=constr_name_attach(lane_id, 'throughput'))
-            var_green_discharge = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_discharge'))
-            var_green_demand = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_demand'))
-            lane_final_queue[lane_id] = var_queue
-            lane_final_queue_estimate[lane_id] = var_queue_estimate
-            lane_spillover[lane_id] = var_spillover
-            lane_relative_queue[lane_id] = var_relative_queue
-            lane_green_dur[lane_id] = var_green_dur
-            lane_throughput[lane_id] = var_throughput
-            lane_green_discharge[lane_id] = var_green_discharge
-            lane_green_demand[lane_id] = var_green_demand
-            lane = self.peri_data.peri_inflow_lanes_by_laneID[lane_id]
-            for movement_id, movement in lane.movements.items():
-                var_green_dur = m.addVar(lb=0, name=constr_name_attach(movement_id, 'green_duration'))
-                # movement_type = movement.type
-                movement_green_dur[movement_id] = var_green_dur
+        inflow_lanes = [lane_id for _, lane_id in self.peri_data.peri_inflow_lanes]
+        movements = list(self.peri_data.peri_inflows.keys())
+        lane_final_queue = m.addVars(inflow_lanes, lb=0)
+        lane_final_queue_estimate = m.addVars(inflow_lanes, lb=-gp.GRB.INFINITY)
+        lane_spillover = m.addVars(inflow_lanes, vtype=gp.GRB.BINARY)
+        lane_relative_queue = m.addVars(inflow_lanes, lb=0)
+        lane_green_dur = m.addVars(inflow_lanes, lb=0)
+        lane_throughput = m.addVars(inflow_lanes, lb=0)
+        lane_green_discharge = m.addVars(inflow_lanes, lb=0)
+        lane_green_demand = m.addVars(inflow_lanes, lb=0)
+        movement_green_dur = m.addVars(movements, lb=0)
         # Other variables
         inflow_diff: gp.Var = m.addVar(lb=-gp.GRB.INFINITY, name='inflow_diff')
         abs_inflow_diff: gp.Var = m.addVar(lb=0, name='abs_inflow_diff')
@@ -392,97 +371,94 @@ class PeriSignalController:
         # Multi-objectives
         obj = 0
         # obj1: Minimize the difference between total inflow and required total inflow (normalized)
-        inflow_lanes = gp.tuplelist(self.peri_data.peri_inflow_lanes)
         m.addConstr(inflow_diff == (self.upper_inflow - gp.quicksum(
-            lane_throughput[lane_id] for _, lane_id in inflow_lanes)) / maximal_action, name='cal_diff')
+            lane_throughput[lane_id] for lane_id in inflow_lanes)) / maximal_action, name='cal_diff')
         m.addGenConstrAbs(abs_inflow_diff, inflow_diff, name='abs')
         obj += config['upper_obj_weight']['gating'] * abs_inflow_diff
         # obj2 (queue-balance): Minimize the variance of relative queue length,
         # which is equivalent to minimize the summation of squared relative queue length when obj1 >> obj2
         if self.distribution_mode == 'balance_queue':
-            for signal_id, lane_id in self.peri_data.peri_inflow_lanes:
+            for lane_id in inflow_lanes:
                 lane = self.peri_data.peri_inflow_lanes_by_laneID[lane_id]
                 m.addConstr(lane_relative_queue[lane_id] == lane_final_queue[lane_id] * lane.vehicle_length / lane.length,
-                            name=constr_name_attach(signal_id, lane_id, 'cal_relative_queue'))
-            m.addConstr(
-                total_squared_queue == gp.quicksum(lane_relative_queue[lane_id] * lane_relative_queue[lane_id]
-                                                   for _, lane_id in inflow_lanes), name='cal_squared_queue')
+                            name=constr_name_attach(lane_id, 'cal_relative_queue'))
+            m.addConstr(total_squared_queue == gp.quicksum(lane_relative_queue[lane_id] * lane_relative_queue[lane_id]
+                        for lane_id in inflow_lanes), name='cal_squared_queue')
             obj += config['upper_obj_weight']['balance'] * total_squared_queue
         # obj2 (equally distributed): Minimize the variance of normalized throughput,
         # which is equivalent to minimize the summation of squared throughput when obj1 >> obj2
         elif self.distribution_mode == 'equal':
             m.addConstr(total_squared_throughput == gp.quicksum(
                 lane_throughput[lane_id] * lane_throughput[lane_id] / pow(lane_maximal_throughput, 2)
-                for _, lane_id in inflow_lanes), name='cal_squared_throughput')
+                for lane_id in inflow_lanes), name='cal_squared_throughput')
             obj += config['upper_obj_weight']['balance'] * total_squared_throughput
         m.setObjective(obj)
         # obj3 (prevent spillover): Minimize the number of lanes with spillover
         if config['peri_spillover_penalty'] is True:
-            m.addConstr(total_spillover == gp.quicksum(lane_spillover[lane_id] for _, lane_id in inflow_lanes) / len(inflow_lanes),
+            m.addConstr(total_spillover == gp.quicksum(lane_spillover[lane_id] for lane_id in inflow_lanes) / len(inflow_lanes),
                         name='cal_total_spillover')
             obj += config['upper_obj_weight']['spillover'] * total_spillover
 
         # Add constraints (for inflow movements)
-        for signal_id, lane_id in self.peri_data.peri_inflow_lanes:
-            signal = self.peri_data.peri_signals[signal_id]
+        for lane_id in inflow_lanes:
             lane = self.peri_data.peri_inflow_lanes_by_laneID[lane_id]
             # Constraint 1: Final queue estimation
-            m.addConstr(lane_final_queue_estimate[lane_id] == lane.queue + signal.cycle * lane.arrival_rate -
-                        lane_throughput[lane_id], name=constr_name_attach(signal_id, lane_id, 'queue_estimate'))
+            m.addConstr(lane_final_queue_estimate[lane_id] == lane.queue + cycle * lane.arrival_rate -
+                        lane_throughput[lane_id], name=constr_name_attach(lane_id, 'queue_estimate'))
             m.addConstr(lane_final_queue[lane_id] == gp.max_(lane_final_queue_estimate[lane_id], 0),
-                        name=constr_name_attach(signal_id, lane_id, 'queue'))
+                        name=constr_name_attach(lane_id, 'queue'))
             # Constraint 2: Lane throughput calculation
             m.addConstr(lane_green_discharge[lane_id] == lane_green_dur[lane_id] * lane.saturation_flow_rate,
-                        name=constr_name_attach(signal_id, lane_id, 'green_discharge'))
+                        name=constr_name_attach(lane_id, 'green_discharge'))
             # print(f'The green start of lane {lane_id} is {lane.green_start}')
             m.addConstr(lane_green_demand[lane_id] == lane.queue + lane.arrival_rate * (
                     lane.green_start[0] + lane_green_dur[lane_id]),
-                        name=constr_name_attach(signal_id, lane_id, 'green_demand'))
+                        name=constr_name_attach(lane_id, 'green_demand'))
             if config['peri_green_start_model']:
                 m.addConstr(lane_throughput[lane_id] == gp.min_(lane_green_discharge[lane_id], lane_green_demand[lane_id]),
-                            name=constr_name_attach(signal_id, lane_id, 'throughput'))
+                            name=constr_name_attach(lane_id, 'throughput'))
             else:
                 m.addConstr(lane_throughput[lane_id] == lane_green_discharge[lane_id],
-                            name=constr_name_attach(signal_id, lane_id, 'throughput'))
+                            name=constr_name_attach(lane_id, 'throughput'))
             # Constraint 3: Downstream capacity constraint
             m.addConstr(lane_throughput[lane_id] <= lane.get_downstream_capacity(),
-                        name=constr_name_attach(signal_id, lane_id, 'down_capacity'))
+                        name=constr_name_attach(lane_id, 'down_capacity'))
             # Constraint 4: Minimum / Maximum green duration
             for movement_id, movement in lane.movements.items():
                 if self.signal_phase_mode == 'NEMA':
                     m.addConstr(movement_green_dur[movement_id] <= config['max_green'] - config['min_green'] - yellow,
-                                name=constr_name_attach(signal_id, movement_id, 'max_green'))
+                                name=constr_name_attach(movement_id, 'max_green'))
                 else:       # TODO: time-slot方法
                     m.addConstr(movement_green_dur[movement_id] <= config['max_green'],
-                                name=constr_name_attach(signal_id, movement_id, 'max_green'))
+                                name=constr_name_attach(movement_id, 'max_green'))
                 m.addConstr(movement_green_dur[movement_id] >= config['min_green'],
-                            name=constr_name_attach(signal_id, movement_id, 'min_green'))
+                            name=constr_name_attach(movement_id, 'min_green'))
             # Constraint 5: Match the signal timing of movement and lane
             for movement_id, movement in lane.movements.items():
                 # print(f'Combine green time of lane {lane_id} and movement {movement_id}')
                 m.addConstr(movement_green_dur[movement_id] == lane_green_dur[lane_id],
-                            name=constr_name_attach(signal_id, lane_id, 'lane_green_duration'))
+                            name=constr_name_attach(lane_id, 'lane_green_duration'))
             # Constraint 6: Judge whether the lane is spillover
             if config['peri_spillover_penalty']:
                 alpha = config['spillover_threshold']
                 m.addConstr(alpha * lane.length - lane_final_queue[lane_id] * lane.vehicle_length <= M * (1 - lane_spillover[lane_id]),
-                            name=constr_name_attach(signal_id, lane_id, 'lane_spillover_1'))
+                            name=constr_name_attach(lane_id, 'lane_spillover_1'))
                 m.addConstr(alpha * lane.length - lane_final_queue[lane_id] * lane.vehicle_length >= M * lane_spillover[lane_id] + 1 / M,
-                            name=constr_name_attach(signal_id, lane_id, 'lane_spillover_2'))
+                            name=constr_name_attach(lane_id, 'lane_spillover_2'))
 
         m.optimize()
 
         if m.status == gp.GRB.OPTIMAL:
             # calculate the objective value
             inflow, queue_var = 0, 0
-            for _, lane_id in self.peri_data.peri_inflow_lanes:
+            for lane_id in inflow_lanes:
                 inflow += lane_throughput[lane_id].x
             if self.distribution_mode == 'balance_queue':
                 queue_var = total_squared_queue.x
             elif self.distribution_mode == 'equal':
                 queue_var = total_squared_throughput.x
             # extract the optimal solution
-            for _, lane_id in self.peri_data.peri_inflow_lanes:
+            for lane_id in inflow_lanes:
                 lane = self.peri_data.peri_inflow_lanes_by_laneID[lane_id]
                 lane.green_duration = [round(lane_green_dur[lane_id].x)]
                 for movement_id, movement in lane.movements.items():
@@ -526,36 +502,17 @@ class PeriSignalController:
 
             # Variables: queue length at the next step of each lane;
             # green start of each lane/movement; green duration of each lane/movement
-            movement_green_start: Dict[str, gp.Var] = {}
-            movement_green_dur: Dict[str, gp.Var] = {}
-            movement_sequence: Dict[tuple, gp.Var] = {}
-            lane_green_start: Dict[str, gp.Var] = {}
-            lane_green_dur: Dict[str, gp.Var] = {}
-            lane_throughput: Dict[str, gp.Var] = {}
-            lane_green_discharge: Dict[str, gp.Var] = {}
-            lane_green_demand: Dict[str, gp.Var] = {}
-            # Add variables to each container
-            for lane_id in signal.in_lanes.keys():
-                var_green_start = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_start'))
-                var_green_dur = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_duration'))
-                var_throughput = m.addVar(lb=0, name=constr_name_attach(lane_id, 'throughput'))
-                var_green_discharge = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_discharge'))
-                var_green_demand = m.addVar(lb=0, name=constr_name_attach(lane_id, 'green_demand'))
-                lane_green_start[lane_id] = var_green_start
-                lane_green_dur[lane_id] = var_green_dur
-                lane_throughput[lane_id] = var_throughput
-                lane_green_discharge[lane_id] = var_green_discharge
-                lane_green_demand[lane_id] = var_green_demand
-            for movement_id, movement in signal.movements.items():
-                var_green_start = m.addVar(lb=0, name=constr_name_attach(movement_id, 'green_start'))
-                var_green_dur = m.addVar(lb=0, name=constr_name_attach(movement_id, 'green_duration'))
-                # movement_type = movement.type
-                movement_green_start[movement_id] = var_green_start
-                movement_green_dur[movement_id] = var_green_dur
-                for movement2_id, movement2 in signal.movements.items():
-                    var_movement_sequence = m.addVar(vtype=gp.GRB.BINARY,
-                                                     name=constr_name_attach(movement_id, movement2_id, 'sequence'))
-                    movement_sequence[(movement_id, movement2_id)] = var_movement_sequence
+            movements = list(signal.movements)
+            movement_matrix = [(mov1, mov2) for mov1 in movements for mov2 in movements if mov2 != mov1]
+            lanes = list(signal.in_lanes)
+            movement_green_start = m.addVars(movements, lb=0)
+            movement_green_dur = m.addVars(movements, lb=0)
+            movement_sequence = m.addVars(movement_matrix, vtype=gp.GRB.BINARY)
+            lane_green_start = m.addVars(lanes, lb=0)
+            lane_green_dur = m.addVars(lanes, lb=0)
+            lane_throughput = m.addVars(lanes, lb=0)
+            lane_green_discharge = m.addVars(lanes, lb=0)
+            lane_green_demand = m.addVars(lanes, lb=0)
             # Other variables
             total_throughput = m.addVar(lb=0, name='total_thrp')
 
@@ -644,7 +601,6 @@ class PeriSignalController:
             # Constraint 6: Match the signal timing of movement and lane
             for lane_id, lane in signal.in_lanes.items():
                 for movement_id, movement in lane.movements.items():
-                    # print(f'Combine green time of lane {lane_id} and movement {movement_id}')
                     m.addConstr(movement_green_dur[movement_id] == lane_green_dur[lane_id],
                                 name=constr_name_attach(signal_id, lane_id, 'lane_green_duration'))
                     m.addConstr(movement_green_start[movement_id] == lane_green_start[lane_id],
