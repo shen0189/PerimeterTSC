@@ -104,10 +104,13 @@ class Lane:
         self.length = 0
         self.capacity = 0
         self.saturation_flow_rate = 0
-        self.arrival_rate = 0
-        self.queue = 0      # number of vehicle at the beginning of the cycle
-        self.vehicle_length = 0     # average vehicle length
+        self.vehicle_length = 0  # average vehicle length
         self.saturation_limit = 0
+
+        self.arrival_vehicle = 0    # number of vehicle entered within the last interval
+        self.arrival_rate = 0
+        self.queue = 0      # number of vehicle at the end of the cycle
+        self.queueing_vehicles = []
 
         self.green_start: list = [0]
         self.green_duration: list = [0]
@@ -125,13 +128,10 @@ class Lane:
     def set_capacity(self, capacity: int):
         self.capacity = capacity
 
-    def set_arrival_rate(self, rate: float):
-        self.arrival_rate = rate
-        # print(f'The arrival rate of lane {self.id} is {rate} vehicle per second.')
-
-    def set_queue(self, queue: int):
-        self.queue = queue
-        # print(f'The queue of lane {self.id} is {queue} vehicles.')
+    def update_traffic_state(self):
+        self.arrival_rate = self.arrival_vehicle / config['infostep']
+        self.arrival_vehicle = 0
+        self.queue = len(self.queueing_vehicles)
 
     def set_vehicle_length(self, vehicle_length: float):
         self.vehicle_length = vehicle_length
@@ -143,6 +143,42 @@ class Lane:
             down_link_capacity = down_link.get_remain_capacity()
             if down_link_capacity < capacity:
                 min_cap_movement = movement_id
+                capacity = down_link_capacity
+        return capacity
+
+
+class LaneGroup:
+    """
+    相同进口道的同时放行的车道集合
+    """
+
+    def __init__(self, group_id: str, tls_id: str):
+        self.id = group_id      # 暂定与edge_id相同
+        self.signal = tls_id
+        self.movements: Dict[str, Movement] = {}
+        self.lanes: Dict[str, Lane] = {}
+
+        self.length = 0     # 所在edge的长度
+        self.total_capacity = 0             # 所有车道可容纳车辆数, 与
+        self.saturation_flow_rate = 0       # 所有车道的饱和流率之和
+        self.throughput_upperbound = 0
+        self.arrival_rate = 0       # 所有车道的到达率之和
+        self.total_queue = 0        # 所有车道的排队车辆数之和
+        self.vehicle_length = 0     # average vehicle length
+        self.saturation_limit = 0
+
+        self.green_start: list = [0]
+        self.green_duration: list = [0]
+        self.min_green = 0
+        self.max_green = 0
+        self.yellow_duration = 0
+
+    def get_downstream_capacity(self):
+        min_cap_movement, capacity = '', 1e7
+        for movement_id, movement in self.movements.items():
+            down_link = movement.down_link
+            down_link_capacity = down_link.get_remain_capacity()
+            if down_link_capacity < capacity:
                 capacity = down_link_capacity
         return capacity
 
@@ -179,10 +215,6 @@ class Intersection:
         if new_lane.id not in self.in_lanes:
             self.in_lanes[new_lane.id] = new_lane
 
-    def add_edge(self, new_edge: str):
-        if new_edge not in self.in_edges:
-            self.in_edges.append(new_edge)
-
     def add_downstream_link(self, new_downstream_link: DownstreamLink):
         if new_downstream_link.id not in self.downLinks:
             self.downLinks[new_downstream_link.id] = new_downstream_link
@@ -191,8 +223,8 @@ class Intersection:
         self.conflict_matrix[mov1_id][mov2_id] = 1
         self.conflict_matrix[mov2_id][mov1_id] = 1
 
-    def combine_lane_movement_connection_downlink(self, new_lane: Lane, new_movement: Movement,
-                                                  new_connection: Connection, new_downlink: DownstreamLink):
+    def combine_elements(self, new_lane: Lane, new_movement: Movement,
+                         new_connection: Connection, new_downlink: DownstreamLink):
         new_lane_id, new_movement_id = new_lane.id, new_movement.id
         new_connection_id, new_downlink_id = new_connection.id, new_downlink.id
         self.in_lanes[new_lane_id].movements[new_movement_id] = self.movements[new_movement_id]
@@ -220,10 +252,10 @@ class PeriSignals:
         self.peri_info = config['Peri_info']
         self.peri_signals: Dict[str, Intersection] = {tls: Intersection(tls) for tls in self.peri_info}
         self.peri_nodes: List[str] = [tls['node'] for tls in self.peri_info.values()]
-        self.peri_inflows: Dict[str, Movement] = {}
-        self.peri_inflows_by_edgeID: List[str] = []
-        self.peri_inflow_lanes_by_laneID: Dict[str, Lane] = {}
-        self.peri_inflow_lanes: List[tuple] = []    # 暂无法处理inflow和非inflow同时在一条车道上的情况
+        self.peri_inflows: Dict[str, Movement] = {}     # 仅受控方向
+        self.peri_edges: Dict[str, LaneGroup] = {}      # 仅受控方向, lanegroup -> edge
+        self.peri_inflow_lanes_by_laneID: Dict[str, Lane] = {}      # 仅受控方向
+        self.peri_inflow_lanes: List[tuple] = []    # 仅受控方向
         self.peri_downstream_links: Dict[str, DownstreamLink] = {}
         self.netfile = net_fp
         self.sumo_cmd = sumo_cmd
@@ -249,8 +281,6 @@ class PeriSignals:
                     connection_dir = connection.attrib['dir']
                     if connection_dir == 't':
                         connection_dir = 'l'  # treat turn-about as left-turn
-                    # Add edges
-                    peri_signal.add_edge(new_edge=from_edge)
                     # Add downstream links
                     new_downstream_link = DownstreamLink(tls_id=tls_id, link_id=to_edge)
                     peri_signal.add_downstream_link(new_downstream_link)
@@ -276,8 +306,10 @@ class PeriSignals:
                                                 to_lane=to_lane_id, direction=connection_dir)
                     peri_signal.add_connection(new_connection)
                     # Add the lane/movement to the movement/lane (must add the new lane/movement/connection first)
-                    peri_signal.combine_lane_movement_connection_downlink(new_lane, new_movement, new_connection,
-                                                                          new_downstream_link)
+                    peri_signal.combine_elements(new_lane=new_lane,
+                                                 new_movement=new_movement,
+                                                 new_connection=new_connection,
+                                                 new_downlink=new_downstream_link)
 
         # Add stages for slot-based control
         if self.phase_mode == 'Slot':
@@ -296,8 +328,6 @@ class PeriSignals:
             for movement_id, movement in peri_signal.movements.items():
                 if movement.type == 'inflow':
                     self.peri_inflows[movement_id] = movement
-                    if movement.in_edge not in self.peri_inflows_by_edgeID:
-                        self.peri_inflows_by_edgeID.append(movement.in_edge)
                     for lane_id in movement.lanes:
                         if (peri_signal_id, lane_id) not in self.peri_inflow_lanes:
                             self.peri_inflow_lanes.append((peri_signal_id, lane_id))
@@ -307,22 +337,19 @@ class PeriSignals:
         edges = root.findall('edge')
         for edge in edges:
             if edge.attrib['id'][0] != ':':
-                # Get the capacity of in_edge and downstream edge
+                edge_id = edge.attrib['id']
                 lanes = edge.findall('lane')
                 for lane in lanes:
                     lane_id = lane.attrib['id']
                     lane_length = float(lane.attrib['length'])
-                    lane_capacity = int(lane_length / config['avg_spacing'])
+                    lane_capacity = int(lane_length / config['vehicle_length'])
                     for peri_signal in self.peri_signals.values():
                         if lane_id in peri_signal.in_lanes:
                             peri_signal.in_lanes[lane_id].set_length(lane_length)
                             peri_signal.in_lanes[lane_id].set_capacity(lane_capacity)
-                    if edge.attrib['id'] in self.peri_downstream_links:
+                            peri_signal.in_lanes[lane_id].vehicle_length = config['vehicle_length']
+                    if edge_id in self.peri_downstream_links:
                         self.peri_downstream_links[edge.attrib['id']].add_capacity(lane_capacity)
-                # # Get the capacity of downstream link
-                # if edge.attrib['id'] in self.peri_downstream_links:
-                #     # Assume same length on all lanes
-                #     self.peri_downstream_links[edge.attrib['id']].set_total_capacity(lane_capacity)
 
         # Add timing parameters
         for peri_signal in self.peri_signals.values():
@@ -337,16 +364,37 @@ class PeriSignals:
                 for lane in movement.lanes.values():
                     flow_rate += lane.saturation_flow_rate / len(lane.movements)
                 movement.flow_rate = flow_rate
-
             for lane in peri_signal.in_lanes.values():
                 lane.min_green = config['min_green']
                 lane.max_green = config['max_green']
                 lane.yellow_duration = config['yellow_duration']
                 lane.saturation_flow_rate = config['saturation_flow_rate']
                 lane.saturation_limit = config['saturation_limit']
-
             for connection in peri_signal.connections.values():
                 connection.yellow_duration = config['yellow_duration']
+
+        # Add lane-group definitions for inflow edges after the basic elements determined
+        for tls_id, tls_info in config['Peri_info'].items():
+            inflow_edge_id = str(tls_info['edge'])
+            new_lane_group = LaneGroup(group_id=inflow_edge_id, tls_id=tls_id)
+            # Add lanes and movements
+            for lane_id, lane in self.peri_signals[tls_id].in_lanes.items():
+                if lane.edge == inflow_edge_id:
+                    new_lane_group.lanes[lane_id] = lane
+                    for movement_id, movement in lane.movements.items():
+                        if movement_id not in new_lane_group.movements:
+                            new_lane_group.movements[movement_id] = movement
+            # Add parameters
+            new_lane_group.length = np.mean([lane.length for lane in new_lane_group.lanes.values()])
+            new_lane_group.total_capacity = sum([lane.capacity for lane in new_lane_group.lanes.values()])
+            new_lane_group.saturation_flow_rate = sum([lane.saturation_flow_rate for lane in new_lane_group.lanes.values()])
+            new_lane_group.saturation_limit = config['saturation_limit']
+            new_lane_group.yellow_duration = config['yellow_duration']
+            new_lane_group.min_green = config['min_green']
+            new_lane_group.max_green = config['max_green']
+            new_lane_group.vehicle_length = config['vehicle_length']
+            new_lane_group.throughput_upperbound = new_lane_group.max_green * new_lane_group.saturation_flow_rate
+            self.peri_edges[inflow_edge_id] = new_lane_group
 
     def get_all_lanes(self):
         peri_lanes = []
@@ -459,58 +507,6 @@ class PeriSignals:
             else:
                 program_dict[current_state] = current_state_duration
             peri_program_dict[signal_id] = program_dict
-
-            #     # 嵌套周期结构
-            #     general_cycle = signal.cycle * signal.generalized_cycle_num
-            #     for i in range(int(general_cycle)):
-            #         green_idx, yellow_idx = [], []
-            #         for connection_id, connection in signal.connections.items():
-            #             inform = connection_id.split('_')
-            #             idx = int(inform[-1]) + int(inform[-2])
-            #             for ()
-            #
-            #
-            #
-            #         pass
-            # else:
-            #     # 常规周期结构
-            #     for i in range(int(signal.cycle)):
-            #         green_idx, yellow_idx = [], []
-            #         # new_state = 'r' * len(signal.connections)
-            #         for connection_id, connection in signal.connections.items():
-            #             inform = connection_id.split('_')
-            #             idx = int(inform[-1]) + int(inform[-2])
-            #             start, duration = connection.green_start, connection.green_duration
-            #             yellow = connection.yellow_duration
-            #             if start <= i < start + duration:
-            #                 green_idx.append(idx)
-            #                 # new_state[idx] = 'G'
-            #             elif start + duration <= i < start + duration + yellow:
-            #                 yellow_idx.append(idx)
-            #                 # new_state[idx] = 'y'
-            #         new_state = ''
-            #         for j in range(len(signal.connections)):
-            #             if j in green_idx:
-            #                 new_state += 'G'
-            #             elif j in yellow_idx:
-            #                 new_state += 'y'
-            #             else:
-            #                 new_state += 'r'
-            #         if new_state == current_state:
-            #             current_state_duration += 1
-            #         else:
-            #             if i > 0:  # Do not update at the beginning
-            #                 if current_state in program_dict:
-            #                     program_dict[current_state] += current_state_duration
-            #                 else:
-            #                     program_dict[current_state] = current_state_duration
-            #             current_state, current_state_duration = new_state, 1
-            #     if current_state in program_dict:       # Final state
-            #         program_dict[current_state] += current_state_duration
-            #     else:
-            #         program_dict[current_state] = current_state_duration
-            #     peri_program_dict[signal_id] = program_dict
-            #     # print(f'Signal program of {signal_id}: {program_dict}')
 
         return peri_program_dict
 
