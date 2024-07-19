@@ -18,7 +18,7 @@ from typing import Dict
 from copy import deepcopy
 
 class Simulator():
-    def __init__(self, TrafficGen, netdata, peridata):
+    def __init__(self, TrafficGen, netdata, peridata: PeriSignals):
         # self.min_green = config['min_green']
         # self.max_green = config['max_green']
         # self.states = config['states']
@@ -27,7 +27,7 @@ class Simulator():
         self.TrafficGen = TrafficGen
         self.state_steps = config['state_steps']
         self.netdata = netdata
-        self.peridata = peridata
+        self.peridata: PeriSignals = peridata
 
         ''' -info_interval:  10 sec for data collection 
             -control_interval: 100sec for a new action
@@ -39,12 +39,7 @@ class Simulator():
 
         self.lower_mode = config['lower_mode']
 
-        ## Perimeter lane halting vehs, inflow, outflow
-        self.peri_halveh_step: Dict[str, list] = {}
-        self.peri_entered_step: Dict[str, list] = {}
-        self.peri_left_step: Dict[str, list] = {}
-        self.peri_laststep_entered_veh: Dict[str, list] = {}
-        self.peri_laststep_left_veh: Dict[str, list] = {}
+        self.vehicle_loc = {}
 
     def simu_start(self, sumo_cmd):
         traci.start(sumo_cmd)
@@ -164,45 +159,52 @@ class Simulator():
         '''
         Update the halting vehicle, inflow, outflow of peri lanes at each step within one interval
         '''
-        for signal_id, signal in self.peridata.peri_signals.items():
-            for lane_id, lane in signal.in_lanes.items():
-                hal_veh = traci.lane.getLastStepHaltingNumber(lane_id)
-                edge_id, lane_idx = lane_id.split('_')
-                in_detector_id = edge_id + lane_idx + '_in'
-                out_detector_id = edge_id + '00' + lane_idx + '_out'
-                entered_veh_list = traci.inductionloop.getLastStepVehicleIDs(in_detector_id)
-                left_veh_list = traci.inductionloop.getLastStepVehicleIDs(out_detector_id)
-                # check whether the vehicle has been recorded
-                entered_veh_num, left_veh_num = len(entered_veh_list), len(left_veh_list)
-                for veh_ID in entered_veh_list:
-                    if lane_id in self.peri_laststep_entered_veh:
-                        if veh_ID in self.peri_laststep_entered_veh[lane_id]:
-                            entered_veh_num -= 1
-                for veh_ID in left_veh_list:
-                    if lane_id in self.peri_laststep_left_veh:
-                        if veh_ID in self.peri_laststep_left_veh[lane_id]:
-                            left_veh_num -= 1
-                self.peri_laststep_entered_veh[lane_id] = entered_veh_list
-                self.peri_laststep_left_veh[lane_id] = left_veh_list
-                self.peri_halveh_step.setdefault(lane_id, []).append(hal_veh)
-                self.peri_entered_step.setdefault(lane_id, []).append(entered_veh_num)
-                self.peri_left_step.setdefault(lane_id, []).append(left_veh_num)
+        if self._step % 10 == 0:
+            # 更新加入排队的车辆
+            for signal_id, signal in self.peridata.peri_signals.items():
+                for lane_id, lane in signal.in_lanes.items():
+                    vehicles: list = traci.lane.getLastStepVehicleIDs(lane_id)
+                    for vehicle_id in vehicles:
+                        speed = traci.vehicle.getSpeed(vehicle_id)
+                        if speed < 0.1:
+                            # 第一次停车时加入车道队列
+                            if vehicle_id not in lane.queueing_vehicles:
+                                lane.queueing_vehicles.append(vehicle_id)
+                            # 若该车辆曾被记录过且记录在不同车道, 则从原车道上删除并更新记录, 解决变道问题
+                            if vehicle_id in self.vehicle_loc:
+                                former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
+                                if former_lane_id != lane_id:
+                                    self.peridata.peri_signals[former_signal_id].in_lanes[former_lane_id].queueing_vehicles.remove(vehicle_id)
+                                    self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
+                            # 若未被记录过则添加记录
+                            else:
+                                self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
 
-    def _reset_peri_state(self):
-        '''
-        Reset the list of each peri lane after one interval
-        '''
-        self.peri_halveh_step = {lane_id: [] for lane_id in self.peri_halveh_step}
-        self.peri_entered_step = {lane_id: [] for lane_id in self.peri_entered_step}
-        self.peri_left_step = {lane_id: [] for lane_id in self.peri_left_step}
+        if self._step % config['detector_interval'] == 0:
+            # 更新进入车辆数和离开车辆
+            for signal_id, signal in self.peridata.peri_signals.items():
+                for lane_id, lane in signal.in_lanes.items():
+                    edge_id, lane_idx = lane_id.split('_')
+                    # 进入车辆: 通过上游检测器估计, 其中边界受控方向后续会进行平均分配
+                    in_detector_id = edge_id + '00' + lane_idx + '_in'
+                    entered_vehicle_number = traci.inductionloop.getLastIntervalVehicleNumber(in_detector_id)
+                    lane.arrival_vehicle += entered_vehicle_number
+                    # 离开车辆: 对比当前车道上的车辆和队列中的车辆, 删除不在车道上的车辆
+                    current_vehicles = traci.lane.getLastStepVehicleIDs(lane_id)
+                    for vehicle in reversed(lane.queueing_vehicles):
+                        if vehicle not in current_vehicles:
+                            lane.queueing_vehicles.remove(vehicle)
+                            # 清除记录
+                            if self.vehicle_loc.get(vehicle, (0, 0))[1] == lane_id:
+                                self.vehicle_loc.pop(vehicle, None)
 
     def _simulate(self, num_step):
         # starttime = time.perf_counter()
 
         for _ in range(num_step):
             traci.simulationStep()
-            self._get_peri_state()
             self._step += 1
+            self._get_peri_state()
         
         # endtime = time.perf_counter()
         # # endtime = datetime.datetime.now()
@@ -210,20 +212,7 @@ class Simulator():
 
         # print('程序运行时间:%s毫秒' % (run_time))
 
-
-
     ### Env: action, reward, state
-
-    def get_peri_state_interval(self):
-        '''
-        return the peri lane info and reset the state record
-        '''
-        peri_info = {'halting': deepcopy(self.peri_halveh_step),
-                     'entered': deepcopy(self.peri_entered_step),
-                     'left': deepcopy(self.peri_left_step)}
-        self._reset_peri_state()
-        return peri_info
-
     def get_stacked_states(self):
         ''' obtain the stacked state of the controller: list as input to NN 
         '''
