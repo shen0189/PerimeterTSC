@@ -136,10 +136,6 @@ class Trainer():
             ## output bar for multiple process
             print('\t' * (self.cur_epis % self.n_jobs) * 3 + f"{self.cur_epis + 1} current step: {step}", end='\r')
 
-            ## 3.1 update perimeter state
-            if step % self.cycle_time == 0 and step > 0:
-                self.agent_upper.peri_states = self.env.get_peri_state_interval()
-
             ## 3.2 get action
             self.get_actions(step)
 
