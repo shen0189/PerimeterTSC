@@ -65,7 +65,6 @@ class UpperAgents:
         else:  # for RL
             self.states = config['states']
         self.env_dim = self._get_env_dim()
-        self.peri_states = {}       # state of perimeter lanes
 
         # record
         self.metric_list = ['cul_obj', 'cul_reward', 'cul_penalty',
@@ -244,7 +243,7 @@ class UpperAgents:
 
         # 3. assign the vehicle to each perimeter and obtain the phase duration
         # green_time, red_time = self.perimeter.get_greensplit(a, step)
-        estimate_inflow = self.perimeter.get_full_greensplit(a, self.peri_states)
+        estimate_inflow = self.perimeter.get_full_greensplit(a)
         self.estimated_inflow.append(estimate_inflow)
 
         # 4. set program
