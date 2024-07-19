@@ -114,43 +114,27 @@ class Peri_Agent():
         return green_time, red_time
         # print(f"action of greentime :{green_time}")
 
-    def get_full_greensplit(self, action, peri_state: Dict[str, Dict[str, list]]):
+    def get_full_greensplit(self, action):
         """
         distribute the vehicles on perimeter nodes with green split
         """
-        # 1. Collect critical parameters (demand & initial queue)
+        # 1. Update the arrival rate and queue of each lane of last step
         for signal_id, signal in self.peridata.peri_signals.items():
             for lane_id, lane in signal.in_lanes.items():
-                if len(peri_state):
-                    # calculate the real queue length at the implementation step
-                    # assume that the queue length reaches maximum at the end of red
-                    halting_veh_evolution = peri_state['halting'][lane_id]
-                    entered_veh_evolution = peri_state['entered'][lane_id]
-                    left_veh_evolution = peri_state['left'][lane_id]
-                    # print(f'The evolution of halting vehicles on lane {lane_id}: {halting_veh_evolution}')
-                    # print(f'The evolution of entered vehicles on lane {lane_id}: {entered_veh_evolution}')
-                    # print(f'The evolution of left vehicles on lane {lane_id}: {left_veh_evolution}')
-                    red_end_step = halting_veh_evolution.index(max(halting_veh_evolution))
-                    total_newly_entered_veh = sum(entered_veh_evolution[red_end_step:])     # 假设一个cycle内到达率不变
-                    total_newly_left_veh = sum(left_veh_evolution[red_end_step:])
-                    flow = sum(entered_veh_evolution) / self.cycle_time     # veh/s
-                    queue = max(halting_veh_evolution) + total_newly_entered_veh - total_newly_left_veh
-                    queue = max(queue, 0)
-                else:   # step = 0
-                    density = traci.lane.getLastStepVehicleNumber(lane_id) / lane.length
-                    speed = traci.lane.getLastStepMeanSpeed(lane_id)
-                    flow = density * speed      # veh/s
-                    queue = traci.lane.getLastStepHaltingNumber(lane_id)
-                avg_vehicle_length = traci.lane.getLastStepLength(lane_id)
-                lane.set_arrival_rate(flow)
-                lane.set_queue(queue)
-                lane.set_vehicle_length(avg_vehicle_length)
+                lane.update_traffic_state()
             for movement_id, movement in signal.movements.items():
                 downlink_id = movement.down_link.id
                 queue = traci.edge.getLastStepHaltingNumber(downlink_id)
                 signal.downLinks[downlink_id].update_state(queue)
 
-        # 2. Optimize the signal plan of all perimeter intersections
+        # 2. Aggregate the parameters to lane-groups for inflow edges
+        for inflow_edge_id, inflow_edge in self.peridata.peri_edges.items():
+            inflow_edge.total_queue = sum([lane.queue for lane in inflow_edge.lanes.values()])
+            inflow_edge.arrival_rate = sum([lane.arrival_rate for lane in inflow_edge.lanes.values()])
+            for lane_id, lane in inflow_edge.lanes.items():
+                lane.arrival_rate = inflow_edge.arrival_rate / len(inflow_edge.lanes)
+
+        # 3. Optimize the signal plan of all perimeter intersections
         if self.signal_phase_mode == 'Slot':
             controller = TimeSlotPeriSignalController(self.peridata, action, self.slot_num)
         else:
