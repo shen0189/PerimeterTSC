@@ -109,8 +109,10 @@ class Lane:
 
         self.arrival_vehicle = 0    # number of vehicle entered within the last interval
         self.arrival_rate = 0
-        self.queue = 0      # number of vehicle at the end of the cycle
-        self.queueing_vehicles = []
+        self.queue = 0      # number of vehicle at the end of the interval
+        self.laststep_vehicles = []  # all the vehicles on the lane at the last step
+        self.queueing_vehicles = []     # vehicles that have already joined the queue
+        self.entered_vehicles = []      # newly entered vehicles in the last interval
 
         self.green_start: list = [0]
         self.green_duration: list = [0]
@@ -129,8 +131,8 @@ class Lane:
         self.capacity = capacity
 
     def update_traffic_state(self):
-        self.arrival_rate = self.arrival_vehicle / config['infostep']
-        self.arrival_vehicle = 0
+        self.arrival_rate = len(self.entered_vehicles) / config['infostep']
+        self.entered_vehicles = []
         self.queue = len(self.queueing_vehicles)
 
     def set_vehicle_length(self, vehicle_length: float):
