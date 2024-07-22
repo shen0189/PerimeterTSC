@@ -160,35 +160,40 @@ class Simulator():
         Update the halting vehicle, inflow, outflow of peri lanes at each step within one interval
         '''
         if self._step % 10 == 0:
-            # 更新加入排队的车辆
+            # 更新加入排队和新到达的车辆
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
                     vehicles: list = traci.lane.getLastStepVehicleIDs(lane_id)
                     for vehicle_id in vehicles:
+                        # 维护车道排队车辆
                         speed = traci.vehicle.getSpeed(vehicle_id)
                         if speed < 0.1:
                             # 第一次停车时加入车道队列
                             if vehicle_id not in lane.queueing_vehicles:
                                 lane.queueing_vehicles.append(vehicle_id)
-                            # 若该车辆曾被记录过且记录在不同车道, 则从原车道上删除并更新记录, 解决变道问题
+                        # 维护车道新进入车辆
+                        if vehicle_id not in lane.laststep_vehicles:
+                            lane.entered_vehicles.append(vehicle_id)
                             if vehicle_id in self.vehicle_loc:
                                 former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
-                                if former_lane_id != lane_id:
-                                    self.peridata.peri_signals[former_signal_id].in_lanes[former_lane_id].queueing_vehicles.remove(vehicle_id)
-                                    self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
-                            # 若未被记录过则添加记录
-                            else:
+                                if former_lane_id != lane_id:   # 变道车辆
+                                    former_lane = self.peridata.peri_signals[former_signal_id].in_lanes[former_lane_id]
+                                    if vehicle_id in former_lane.entered_vehicles:
+                                        former_lane.entered_vehicles.remove(vehicle_id)
+                        # 维护每辆车所在车道信息
+                        if vehicle_id in self.vehicle_loc:
+                            former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
+                            if former_lane_id != lane_id:  # 变道车辆
                                 self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
+                        else:
+                            self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
+                    # 更新laststep_vehicle
+                    lane.laststep_vehicles = vehicles
 
-        if self._step % config['detector_interval'] == 0:
-            # 更新进入车辆数和离开车辆
+        if self._step % config['infostep'] == 0:
+            # 每个interval结束且更新了排队后, 更新离开车辆数
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
-                    edge_id, lane_idx = lane_id.split('_')
-                    # 进入车辆: 通过上游检测器估计, 其中边界受控方向后续会进行平均分配
-                    in_detector_id = edge_id + '00' + lane_idx + '_in'
-                    entered_vehicle_number = traci.inductionloop.getLastIntervalVehicleNumber(in_detector_id)
-                    lane.arrival_vehicle += entered_vehicle_number
                     # 离开车辆: 对比当前车道上的车辆和队列中的车辆, 删除不在车道上的车辆
                     current_vehicles = traci.lane.getLastStepVehicleIDs(lane_id)
                     for vehicle in reversed(lane.queueing_vehicles):
