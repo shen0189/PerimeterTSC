@@ -368,39 +368,52 @@ class PeriSignalController:
         total_squared_throughput: gp.Var = m.addVar(lb=0, name='squared_throughput')
         total_spillover: gp.Var = m.addVar(lb=0, name='total_spillover')
 
-        # Multi-objectives
+        # Objective
         obj = 0
-        # obj1: Minimize the difference between total inflow and required total inflow (normalized)
-        m.addConstr(inflow_diff == (self.upper_inflow - gp.quicksum(
-            edge_throughput[edge_id] for edge_id in inflow_edges)) / maximal_action, name='cal_diff')
-        m.addGenConstrAbs(abs_inflow_diff, inflow_diff, name='abs')
-        obj += config['upper_obj_weight']['gating'] * abs_inflow_diff
-        # obj2 (queue-balance): Minimize the variance of relative queue length,
-        # which is equivalent to minimize the summation of squared relative queue length when obj1 >> obj2
-        if self.distribution_mode == 'balance_queue':
-            for edge_id, edge in self.peri_data.peri_edges.items():
-                m.addConstr(edge_relative_queue[edge_id] == edge_final_queue[edge_id] / edge.total_capacity,
-                            name=constr_name_attach(edge_id, 'cal_relative_queue'))
-            m.addConstr(total_squared_queue == gp.quicksum(edge_relative_queue[edge_id] * edge_relative_queue[edge_id]
-                        for edge_id in inflow_edges), name='cal_squared_queue')
-            obj += config['upper_obj_weight']['balance'] * total_squared_queue
-        # obj2 (equally distributed): Minimize the variance of normalized throughput,
-        # which is equivalent to minimize the summation of squared throughput when obj1 >> obj2
-        elif self.distribution_mode == 'equal':
-            m.addConstr(total_squared_throughput == gp.quicksum(
-                edge_throughput[edge_id] * edge_throughput[edge_id] / pow(edge.throughput_upperbound, 2)
-                for edge_id, edge in self.peri_data.peri_edges.items()), name='cal_squared_throughput')
-            obj += config['upper_obj_weight']['balance'] * total_squared_throughput
-        # obj3 (prevent spillover): Minimize the number of edges with spillover
-        if config['peri_spillover_penalty'] is True:
-            m.addConstr(total_spillover == gp.quicksum(edge_spillover[edge_id] for edge_id in inflow_edges) / len(inflow_edges),
-                        name='cal_total_spillover')
-            obj += config['upper_obj_weight']['spillover'] * total_spillover
+        if config['peri_control_mode'] == 'queue':
+            # obj1: Difference between total inflow and required total inflow
+            m.addConstr(inflow_diff == (self.upper_inflow - gp.quicksum(
+                edge_throughput[edge_id] for edge_id in inflow_edges)), name='cal_diff')
+            m.addGenConstrAbs(abs_inflow_diff, inflow_diff, name='abs')
+            obj += abs_inflow_diff
+            # obj2: Queue punishment
+            m.addConstr(total_squared_queue == gp.quicksum(
+                edge_final_queue[edge_id] * edge_final_queue[edge_id] * edge.queue_pressure_coef
+                for edge_id, edge in self.peri_data.peri_edges.items()), name='cal_queue_pressure')
+            obj += total_squared_queue
+        elif config['peri_control_mode'] == 'spillover':
+            # obj1: Minimize the difference between total inflow and required total inflow (normalized)
+            m.addConstr(inflow_diff == (self.upper_inflow - gp.quicksum(
+                edge_throughput[edge_id] for edge_id in inflow_edges)) / maximal_action, name='cal_diff')
+            m.addGenConstrAbs(abs_inflow_diff, inflow_diff, name='abs')
+            obj += config['upper_obj_weight']['gating'] * abs_inflow_diff
+            # obj2 (queue-balance): Minimize the variance of relative queue length,
+            # which is equivalent to minimize the summation of squared relative queue length when obj1 >> obj2
+            if self.distribution_mode == 'balance_queue':
+                for edge_id, edge in self.peri_data.peri_edges.items():
+                    m.addConstr(edge_relative_queue[edge_id] == edge_final_queue[edge_id] / edge.total_capacity,
+                                name=constr_name_attach(edge_id, 'cal_relative_queue'))
+                m.addConstr(total_squared_queue == gp.quicksum(edge_relative_queue[edge_id] * edge_relative_queue[edge_id]
+                            for edge_id in inflow_edges), name='cal_squared_queue')
+                obj += config['upper_obj_weight']['balance'] * total_squared_queue
+            # obj2 (equally distributed): Minimize the variance of normalized throughput,
+            # which is equivalent to minimize the summation of squared throughput when obj1 >> obj2
+            elif self.distribution_mode == 'equal':
+                m.addConstr(total_squared_throughput == gp.quicksum(
+                    edge_throughput[edge_id] * edge_throughput[edge_id] / pow(edge.throughput_upperbound, 2)
+                    for edge_id, edge in self.peri_data.peri_edges.items()), name='cal_squared_throughput')
+                obj += config['upper_obj_weight']['balance'] * total_squared_throughput
+            # obj3 (prevent spillover): Minimize the number of edges with spillover
+            if config['peri_spillover_penalty'] is True:
+                m.addConstr(total_spillover == gp.quicksum(edge_spillover[edge_id] for edge_id in inflow_edges) / len(inflow_edges),
+                            name='cal_total_spillover')
+                obj += config['upper_obj_weight']['spillover'] * total_spillover
         m.setObjective(obj)
 
         # Add constraints (for inflow movements)
         for edge_id, edge in self.peri_data.peri_edges.items():
             # Constraint 1: Final queue estimation
+            # print(f'The arrival rate of edge {edge_id} is {edge.arrival_rate}')
             print(f'The queue of edge {edge_id} is {edge.total_queue}')
             m.addConstr(edge_final_queue_estimate[edge_id] == edge.total_queue + cycle * edge.arrival_rate -
                         edge_throughput[edge_id], name=constr_name_attach(edge_id, 'queue_estimate'))
@@ -434,12 +447,11 @@ class PeriSignalController:
                             name=constr_name_attach(movement_id, 'min_green'))
             # Constraint 5: Match the signal timing of movement and edge
             for movement_id, movement in edge.movements.items():
-                # print(f'Combine green time of edge {edge_id} and movement {movement_id}')
                 m.addConstr(movement_green_dur[movement_id] == edge_green_dur[edge_id],
                             name=constr_name_attach(edge_id, 'edge_green_duration'))
             # Constraint 6: Judge whether the edge is spillover
             if config['peri_spillover_penalty']:
-                alpha = config['spillover_threshold']
+                alpha = config['spillover_critical_ratio']
                 m.addConstr(alpha * edge.length - edge_final_queue[edge_id] * edge.vehicle_length / len(edge.lanes) <= M * (1 - edge_spillover[edge_id]),
                             name=constr_name_attach(edge_id, 'edge_spillover_1'))
                 m.addConstr(alpha * edge.length - edge_final_queue[edge_id] * edge.vehicle_length / len(edge.lanes) >= -M * edge_spillover[edge_id] + 1 / M,
@@ -469,7 +481,7 @@ class PeriSignalController:
             for edge_id, edge in self.peri_data.peri_edges.items():
                 if edge_spillover[edge_id].x == 1:
                     print(f'Edge {edge_id} is oversaturated. ')
-            # print(f'The estimated inflow by model is {inflow}. ')
+            print(f'The estimated inflow by model is {inflow}. ')
             return inflow, queue_var
         elif m.status == gp.GRB.INFEASIBLE:
             # m.computeIIS()
