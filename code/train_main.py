@@ -439,7 +439,7 @@ sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_step
 
 ## 2. initialize demand generator & netdata
 TrafficGen = TrafficGenerator()
-# TrafficGen.gen_demand(config)     # 当路网结构发生变化时用于初始化更新rou.xml文件
+TrafficGen.gen_demand(config)     # 当路网结构发生变化时用于初始化更新rou.xml文件
 
 nd = NetworkData(config['netfile_dir'], sumo_cmd)
 netdata = nd.get_net_data()
