@@ -168,6 +168,7 @@ class LaneGroup:
         self.total_queue = 0        # 所有车道的排队车辆数之和
         self.vehicle_length = 0     # average vehicle length
         self.saturation_limit = 0
+        self.queue_pressure_coef = 0
 
         self.green_start: list = [0]
         self.green_duration: list = [0]
@@ -396,6 +397,7 @@ class PeriSignals:
             new_lane_group.max_green = config['max_green']
             new_lane_group.vehicle_length = config['vehicle_length']
             new_lane_group.throughput_upperbound = new_lane_group.max_green * new_lane_group.saturation_flow_rate
+            new_lane_group.queue_pressure_coef = 1 / (2 * new_lane_group.total_capacity * config['spillover_critical_ratio'])
             self.peri_edges[inflow_edge_id] = new_lane_group
 
     def get_all_lanes(self):
