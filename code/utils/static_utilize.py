@@ -198,6 +198,7 @@ def import_train_static_configuration(config):
         config['edge_outputfile_dir'] = "measurements/GridBufferNew/EdgeMesurements.xml"
         config['lane_outputfile_dir'] = "measurements/GridBufferNew/EdgeMesurements_lower.xml"
         config['queuefile_dir'] = "measurements/GridBufferNew/queue.xml"
+        config['tripfile_dir'] = "measurements/GridBufferNew/trip.xml"
 
         # tls configure
         if config['lower_mode'] == 'OAM':  # 'FixTime'  #'OAM' # 'MaxPressure'
