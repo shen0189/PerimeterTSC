@@ -36,11 +36,12 @@ class TrafficGenerator():
                 ToRegion_Node = DemandType['ToRegion']
 
                 ### 1. obtain OD pairs
-                OD_PairsEdge, OD_PairsNode = self.get_randOD(FrRegion_Node, ToRegion_Node) 
-                DemandType['OD_Edge'] = OD_PairsEdge
-                DemandType['OD_Node'] = OD_PairsNode
+                OD_PairsInfo = self.get_randOD(FrRegion_Node, ToRegion_Node)
+                DemandType['OD_Info'] = OD_PairsInfo
+                # DemandType['OD_Edge'] = OD_PairsEdge
+                # DemandType['OD_Node'] = OD_PairsNode
 
-                OD_num = len(OD_PairsEdge) # number of OD pairs for this demand type
+                OD_num = len(OD_PairsInfo) # number of OD pairs for this demand type
                 
                 # init
                 Demand_Inter = np.zeros([OD_num,1])
@@ -78,20 +79,26 @@ class TrafficGenerator():
     def get_randOD(self, FrRegion_Node, ToRegion_Node):
         ''' Obtain OD pairs with DepartEdge and ArriveEdge
         '''
+        OD_PairsInfo = {}
         OD_PairsEdge = []
         OD_PairsNode = []
         for FrNode in FrRegion_Node:
             for ToNode in ToRegion_Node:
-                if FrNode != ToNode: 
+                if FrNode != ToNode:
 
+                    # case1: random choose one edge depart/arrive edge for from/to node
                     DepartEdge = choice(self.NodeConfig[FrNode]['OutEdge']) # random choose the DepartEdge from the InEdge
                     ArriveEdge = choice(self.NodeConfig[ToNode]['InEdge']) # random choose the DepartEdge from the InEdge
-
                     if DepartEdge != ArriveEdge:
-                        OD_PairsEdge.append([DepartEdge, ArriveEdge])
-                        OD_PairsNode.append([FrNode, ToNode])
-                  
-        return OD_PairsEdge, OD_PairsNode
+                        OD_PairsInfo[(DepartEdge, ArriveEdge)] = (FrNode, ToNode)
+
+                    # # case2: choose all depart/arrive edges for each from/to node
+                    # for DepartEdge in self.NodeConfig[FrNode]['OutEdge']:
+                    #     for ArriveEdge in self.NodeConfig[ToNode]['InEdge']:
+                    #         if DepartEdge != ArriveEdge:
+                    #             OD_PairsInfo[(DepartEdge, ArriveEdge)] = (FrNode, ToNode)
+
+        return OD_PairsInfo
 
     def cal_demand(self, VolumnRange, interval_num, OD_num):
         ''' Calculate the demand profile for each OD_pair with demand multipliers
@@ -120,12 +127,12 @@ class TrafficGenerator():
 
         for time in range(len(timelist)-1):  # each interval
             for DemandType in self.demand_config:  # each demand type
-                for i, OD_Edges in enumerate(DemandType['OD_Edge']): # each OD pairs
+                for i, (OD_Edges, OD_Nodes) in enumerate(DemandType['OD_Info'].items()):
                     if DemandType['Demand_split'][i][time] != 0: 
                         DepartEdge, ArriveEdge = OD_Edges
-                        FrNode, ToNode = DemandType['OD_Node'][i]
+                        FrNode, ToNode = OD_Nodes
                         value = int(DemandType['Demand_split'][i][time])
-                        print(f'\t\t\t<flow id="F{FrNode*10000 + ToNode*100 + time}" begin="{timelist[time]}" end="{timelist[time+1]}" vehsPerHour="{value}" type="Car0" departLane="best" departSpeed="random" from="{DepartEdge}" to="{ArriveEdge}"/>', file=routes)
+                        print(f'\t\t\t<flow id="F{DepartEdge*10000 + ArriveEdge*100 + time}" begin="{timelist[time]}" end="{timelist[time+1]}" vehsPerHour="{value}" type="Car0" departLane="best" departSpeed="random" from="{DepartEdge}" to="{ArriveEdge}"/>', file=routes)
                         # print(f'                <flow i
                         # d="F{Node[row]*10000+Node[(row-2)*4+col]*100+time}" begin="{timelist[time]}" end="{timelist[time+1]}" vehsPerHour="{int(turn_ratio[1] *demand[time])}" type="Car0" departLane="1" departSpeed="random" from="{EdgeIn[row,col]}" to="{EdgeOut[row-2,col]}"/>', file=routes)    
                         # print(f'                <flow id="F{Node[row]*10000+Node[(row-1)*4+col]*100+time}" begin="{timelist[time]}" end="{timelist[time+1]}" vehsPerHour="{int(turn_ratio[2] * demand[time])}" type="Car0" departLane="0" departSpeed="random" from="{EdgeIn[row,col]}" to="{EdgeOut[row-1,col]}"/>', file=routes)
