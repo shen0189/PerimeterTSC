@@ -60,6 +60,7 @@ def import_train_static_configuration(config):
                 'external_out_edges': [81],
                 'internal_in_edges': [8, 20, 3],
                 'internal_out_edges': [5, 6, 7],
+                'inflow_lane_groups': [3],   # 列表长度代表车道组数量, 第i个元素代表车道组i的车道数量, 从最外侧开始数
                 'nema_plan': {'ring1': ['3_s', '8_l', '', '20_s'],
                               'ring2': ['8_s', '3_l', '', '80_s', '20_l']},
                 'phase_info':
@@ -80,6 +81,7 @@ def import_train_static_configuration(config):
                 'external_out_edges': [83],
                 'internal_in_edges': [30, 44, 64],
                 'internal_out_edges': [48, 47, 46],
+                'inflow_lane_groups': [3],
                 'nema_plan': {'ring1': ['82_s', '44_l', '', '64_s', '30_l'],
                               'ring2': ['44_s', '', '30_s', '64_l']},
                 'phase_info': ['control_phase', 'yellow_phase', 'control_phase', 'yellow_phase',
@@ -99,6 +101,7 @@ def import_train_static_configuration(config):
                 'external_out_edges': [85],
                 'internal_in_edges': [59, 71, 76],
                 'internal_out_edges': [73, 72, 74],
+                'inflow_lane_groups': [3],
                 'nema_plan': {'ring1': ['76_s', '71_l', '', '84_s', '59_l'],
                               'ring2': ['71_s', '76_l', '', '59_s']},
                 'phase_info': ['', 'yellow_phase', '', 'yellow_phase',
@@ -118,6 +121,7 @@ def import_train_static_configuration(config):
                 'external_out_edges': [87],
                 'internal_in_edges': [15, 35, 49],
                 'internal_out_edges': [31, 32, 33],
+                'inflow_lane_groups': [3],
                 'nema_plan': {'ring1': ['35_s', '', '49_s', '15_l'],
                               'ring2': ['86_s', '35_l', '', '15_s', '49_l']},
                 'phase_info': ['control_phase', 'yellow_phase', 'control_phase', 'yellow_phase',
