@@ -22,10 +22,11 @@ else:
     sys.exit("please declare environment variable 'SUMO_HOME'")
 
 class Metric():
-    def __init__(self, control_interval, info_interval, netdata):
+    def __init__(self, control_interval, info_interval, netdata, peridata):
         assert control_interval%info_interval==0, 'the info_interval is incorrect'
         self.info_length = int(control_interval/info_interval) + 1
         self.netdata = netdata
+        self.peridata: PeriSignals = peridata
         self.peri_controlled_links = [peri['edge'] for peri in config['Peri_info'].values()]
         self.peri_outflow_links = [peri['external_out_edges'] for peri in config['Peri_info'].values()]
         self.peri_outflow_links = sum(self.peri_outflow_links, [])
@@ -445,34 +446,68 @@ class Metric():
         file = '.'.join([file[0], 'csv'])
 
         # get base dataframe (two columns: interval and lane_id)
-        lane_items = itertools.product(self.peri_controlled_links, range(0, 3))     # TODO: 从peridata获取
-        lanes = [f'{edge}_{lane}' for edge, lane in lane_items]
+        lanes = list(self.peridata.peri_inflow_lanes_by_laneID.keys())
+        # lane_items = itertools.product(self.peri_controlled_links, range(0, 3))     # TODO: 从peridata获取
+        # lanes = [f'{edge}_{lane}' for edge, lane in lane_items]
         intervals = np.arange(0, config['max_steps'], 1, dtype=float)
         df_complete = pd.DataFrame(product(intervals, lanes), columns=['data_timestep', 'lane_id'])
 
         # process the csv and generate full df
-        df = pd.read_csv(file, sep=';', usecols=['data_timestep', 'lane_id', 'lane_queueing_length'])
+        df = pd.read_csv(file, sep=';', usecols=['data_timestep', 'lane_id', 'lane_queueing_length_experimental'])
         df = df[df['lane_id'].notna()]  # 删除没有信息的行
         df = df[df['lane_id'].str[0] != ":"]  # 删除内部lane
-        df.rename(columns={'lane_queueing_length': 'queue'}, inplace=True)
+        df.rename(columns={'lane_queueing_length_experimental': 'queue'}, inplace=True)
         df = df_complete.merge(df, on=['data_timestep', 'lane_id'], how='left').fillna(1e-5)
         df['edge_id'] = df['lane_id'].str.split('_').str[0].astype(int)
         df_queue_raw = df[df['edge_id'].isin(self.peri_controlled_links)]
-        # edge排队取所有lane的排队的平均值
-        df_queue_avg = df_queue_raw.groupby(['data_timestep', 'edge_id'], as_index=False)['queue'].mean()
-        df_queue_avg['interval'] = df_queue_avg['data_timestep'] // 100 * 100
+
+        # process the queue for each lane group
+        lane_group = self.peridata.peri_lane_groups
+        # lane_groups = list(lane_group.keys())
+        df_lane_group_info = pd.DataFrame(
+            [(lane_group_id, lane_id) for lane_group_id, lanes in lane_group.items() for lane_id in lanes.lanes],
+            columns=['lane_group_id', 'lane_id'])
+        df_queue_raw = pd.merge(df_lane_group_info, df_queue_raw)
+        # 此处queue定义为车道组内所有车道排队长度的平均值
+        df_queue_avg = df_queue_raw.groupby(['data_timestep', 'lane_group_id'], as_index=False)['queue'].mean()
+        df_queue_avg['interval'] = df_queue_avg['data_timestep'] // config['queue_statistics_interval'] * config['queue_statistics_interval']
         # 每个interval的排队取interval内的最大排队
-        df_queue = df_queue_avg.groupby(['interval', 'edge_id'], as_index=False)['queue'].max()
+        df_queue = df_queue_avg.groupby(['interval', 'lane_group_id'], as_index=False)['queue'].max()
         df_queue = df_queue.reset_index()
 
         queue_data = {}
-        # get the queue length of each peri inflow edge
-        for edge in self.peri_controlled_links:
-            queue_list = list(df_queue[df_queue['edge_id'] == edge]['queue'])
-            queue_data[edge] = queue_list
+        # get the queue length of each peri inflow lane group
+        for lane_group_id in self.peridata.peri_lane_groups:
+            queue_list = list(df_queue[df_queue['lane_group_id'] == lane_group_id]['queue'])
+            queue_data[lane_group_id] = queue_list
 
         return queue_data
 
+    def process_trip_output(self, file):
+
+        file = file.split('.')
+        file = '.'.join([file[0], 'csv'])
+
+        df = pd.read_csv(file, sep=';', usecols=['tripinfo_depart', 'tripinfo_departLane',
+                                                 'tripinfo_arrival', 'tripinfo_arrivalLane', 'tripinfo_duration'])
+        df['arrival_interval'] = df['tripinfo_arrival'] // 20 * 20
+        # 根据出发/到达车道区分trip类型
+        df['depart_edge'] = df['tripinfo_departLane'].str.split('_').str[0].astype(int)
+        df['arrival_edge'] = df['tripinfo_arrivalLane'].str.split('_').str[0].astype(int)
+        df['trip_type'] = df.apply(get_trip_type, axis=1)
+
+        df_travel = df.groupby(['trip_type', 'arrival_interval'], as_index=False)['tripinfo_duration'].sum()
+        df_travel = df_travel.reset_index()
+        df_all_types_travel = df.groupby(['arrival_interval'], as_index=False)['tripinfo_duration'].sum()
+        df_all_types_travel = df_all_types_travel.reset_index()
+
+        # key值: 可以设置为demand类型
+        trip_data = {}
+        for trip_type in ['in-in', 'in-out', 'out-in']:
+            trip_data[trip_type] = list(df_travel[df_travel['trip_type'] == trip_type]['tripinfo_duration'])
+        trip_data['total'] = list(df_all_types_travel['tripinfo_duration'])
+
+        return trip_data
 
 ## helper funcs
     def _get_buffer_edges(self):
@@ -484,6 +519,16 @@ class Metric():
                 edge_buffers.append(int(edgeID))
         
         return edge_buffers
+
+
+def get_trip_type(edge):
+    if edge['depart_edge'] in config['Edge_Peri']:
+        return 'out-in'
+    elif edge['arrival_edge'] in config['Edge_Peri']:
+        return 'in-out'
+    else:
+        return 'in-in'
+
 
 if False:
     def update_control_interval(self):
