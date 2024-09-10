@@ -127,12 +127,12 @@ class Peri_Agent():
                 queue = traci.edge.getLastStepHaltingNumber(downlink_id)
                 signal.downLinks[downlink_id].update_state(queue)
 
-        # 2. Aggregate the parameters to lane-groups for inflow edges
-        for inflow_edge_id, inflow_edge in self.peridata.peri_edges.items():
-            inflow_edge.total_queue = sum([lane.queue for lane in inflow_edge.lanes.values()])
-            inflow_edge.arrival_rate = sum([lane.arrival_rate for lane in inflow_edge.lanes.values()])
-            for lane_id, lane in inflow_edge.lanes.items():
-                lane.arrival_rate = inflow_edge.arrival_rate / len(inflow_edge.lanes)
+        # 2. Aggregate the parameters to each lane-group
+        for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
+            inflow_lanegroup.total_queue = sum([lane.queue for lane in inflow_lanegroup.lanes.values()])
+            inflow_lanegroup.arrival_rate = sum([lane.arrival_rate for lane in inflow_lanegroup.lanes.values()])
+            for lane_id, lane in inflow_lanegroup.lanes.items():
+                lane.arrival_rate = inflow_lanegroup.arrival_rate / len(inflow_lanegroup.lanes)
 
         # 3. Optimize the signal plan of all perimeter intersections
         if self.signal_phase_mode == 'Slot':
