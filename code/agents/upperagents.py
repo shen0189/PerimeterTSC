@@ -102,7 +102,7 @@ class UpperAgents:
 
         # metric
         self.info_interval = config['infostep']
-        self.metric = Metric(self.cycle_time, self.info_interval, self.netdata)
+        self.metric = Metric(self.cycle_time, self.info_interval, self.netdata, self.peridata)
 
         # perimeter
         self.tsc_peri = tsc_peri
@@ -229,6 +229,8 @@ class UpperAgents:
         # no action for Static controller
         if self.peri_mode == 'Static' or self.peri_mode == 'MaxPressure':
             return
+
+        print(f'Current time step: {step}')
 
         # 1. get action
         self.a, is_expert = self.get_action_all(self.old_state)
