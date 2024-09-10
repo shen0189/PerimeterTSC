@@ -28,6 +28,7 @@ class LowerAgents:
         """
         self.outputfile = config['lane_outputfile_dir']
         self.queuefile = config['queuefile_dir']
+        self.tripfile = config['tripfile_dir']
 
         ## network config
         self.tsc = tsc
@@ -365,7 +366,7 @@ class LowerAgents:
                 tsc.cur_phase_time = self.control_interval-self.yellow_duration
 
 ## metric
-    def get_metric_each_epis(self, lane_data, queue_data: dict):
+    def get_metric_each_epis(self, lane_data, queue_data: dict, trip_data: dict):
         ''' calculate metric of lower-level of each episode, the data is aggregated in 5 sec
             1. network level （all the nodes in the network）
                --1.1
@@ -454,10 +455,10 @@ class LowerAgents:
 
         ''' 4.3 peri spillover times '''
         threshold = self.spillover_threshold
-        inflow_length_dict = {edgeID: self.peridata.peri_inflow_lanes_by_laneID[str(edgeID) + '_0'].length for edgeID in queue_data}
+        length_dict = {lanegroup_id: self.peridata.peri_lane_groups[lanegroup_id].length for lanegroup_id in queue_data}
         spillover_data = {
-            edgeID: [0 if queue / inflow_length_dict[edgeID] < threshold else 1 for queue in queue_data[edgeID]] for
-            edgeID in queue_data}
+            lanegroup_id: [0 if queue / length_dict[lanegroup_id] < threshold else 1
+                           for queue in queue_data[lanegroup_id]] for lanegroup_id in queue_data}
         total_spillover_times = [sum(spillover_tuple) for spillover_tuple in zip(*spillover_data.values())]
         spillover_times_progression = [sum(total_spillover_times[:i+1]) for i in range(len(total_spillover_times))]
         lower_metric['peri_spillover'] = spillover_times_progression
@@ -466,6 +467,13 @@ class LowerAgents:
         peri_delay_dict = {k: v for k, v in lane_data['ToNode_delay_step'].items() if k in self.peridata.peri_nodes}
         avg_delay = [sum(delay_tuple) / len(delay_tuple) for delay_tuple in zip(*peri_delay_dict.values())]
         lower_metric['peri_delay'] = avg_delay
+
+        ''' 5.1 vehicle travel time '''
+        travel_time_record = {}
+        for trip_type, trip_travel_time in trip_data.items():
+            travel_time_progression = [sum(trip_travel_time[:i + 1]) for i in range(len(trip_travel_time))]
+            travel_time_record[trip_type] = travel_time_progression
+        lower_metric['total_travel_time'] = travel_time_record
 
         return lower_metric
 
