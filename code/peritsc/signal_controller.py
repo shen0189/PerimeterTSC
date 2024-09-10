@@ -349,16 +349,16 @@ class PeriSignalController:
         m.setParam(gp.ParamConstClass.DualReductions, 0)
 
         # Variables
-        inflow_edges = list(self.peri_data.peri_edges)      # lanegroup -> edge
+        inflow_lane_groups = list(self.peri_data.peri_lane_groups)
         movements = list(self.peri_data.peri_inflows)
-        edge_final_queue = m.addVars(inflow_edges, lb=0)    # total number of queueing vehicles
-        edge_final_queue_estimate = m.addVars(inflow_edges, lb=-gp.GRB.INFINITY)
-        edge_spillover = m.addVars(inflow_edges, vtype=gp.GRB.BINARY)
-        edge_relative_queue = m.addVars(inflow_edges, lb=0)
-        edge_green_dur = m.addVars(inflow_edges, lb=0)
-        edge_throughput = m.addVars(inflow_edges, lb=0)
-        edge_green_discharge = m.addVars(inflow_edges, lb=0)
-        edge_green_demand = m.addVars(inflow_edges, lb=0)
+        lanegroup_final_queue = m.addVars(inflow_lane_groups, lb=0)  # total number of queueing vehicles
+        lanegroup_final_queue_estimate = m.addVars(inflow_lane_groups, lb=-gp.GRB.INFINITY)
+        lanegroup_spillover = m.addVars(inflow_lane_groups, vtype=gp.GRB.BINARY)
+        lanegroup_relative_queue = m.addVars(inflow_lane_groups, lb=0)
+        lanegroup_green_dur = m.addVars(inflow_lane_groups, lb=0)
+        lanegroup_throughput = m.addVars(inflow_lane_groups, lb=0)
+        lanegroup_green_discharge = m.addVars(inflow_lane_groups, lb=0)
+        lanegroup_green_demand = m.addVars(inflow_lane_groups, lb=0)
         movement_green_dur = m.addVars(movements, lb=0)
 
         # Other variables
@@ -373,70 +373,72 @@ class PeriSignalController:
         if config['peri_control_mode'] == 'queue':
             # obj1: Difference between total inflow and required total inflow
             m.addConstr(inflow_diff == (self.upper_inflow - gp.quicksum(
-                edge_throughput[edge_id] for edge_id in inflow_edges)), name='cal_diff')
+                lanegroup_throughput[lanegroup_id] for lanegroup_id in inflow_lane_groups)), name='cal_diff')
             m.addGenConstrAbs(abs_inflow_diff, inflow_diff, name='abs')
             obj += abs_inflow_diff
             # obj2: Queue punishment
             m.addConstr(total_squared_queue == gp.quicksum(
-                edge_final_queue[edge_id] * edge_final_queue[edge_id] * edge.queue_pressure_coef
-                for edge_id, edge in self.peri_data.peri_edges.items()), name='cal_queue_pressure')
+                lanegroup_final_queue[lanegroup_id] * lanegroup_final_queue[lanegroup_id] * lanegroup.queue_pressure_coef
+                for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items()), name='cal_queue_pressure')
             obj += total_squared_queue
         elif config['peri_control_mode'] == 'spillover':
             # obj1: Minimize the difference between total inflow and required total inflow (normalized)
             m.addConstr(inflow_diff == (self.upper_inflow - gp.quicksum(
-                edge_throughput[edge_id] for edge_id in inflow_edges)) / maximal_action, name='cal_diff')
+                lanegroup_throughput[lanegroup_id] for lanegroup_id in inflow_lane_groups)) / maximal_action, name='cal_diff')
             m.addGenConstrAbs(abs_inflow_diff, inflow_diff, name='abs')
             obj += config['upper_obj_weight']['gating'] * abs_inflow_diff
             # obj2 (queue-balance): Minimize the variance of relative queue length,
             # which is equivalent to minimize the summation of squared relative queue length when obj1 >> obj2
             if self.distribution_mode == 'balance_queue':
-                for edge_id, edge in self.peri_data.peri_edges.items():
-                    m.addConstr(edge_relative_queue[edge_id] == edge_final_queue[edge_id] / edge.total_capacity,
-                                name=constr_name_attach(edge_id, 'cal_relative_queue'))
-                m.addConstr(total_squared_queue == gp.quicksum(edge_relative_queue[edge_id] * edge_relative_queue[edge_id]
-                            for edge_id in inflow_edges), name='cal_squared_queue')
+                for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
+                    m.addConstr(lanegroup_relative_queue[lanegroup_id] == lanegroup_final_queue[lanegroup_id] / lanegroup.total_capacity,
+                                name=constr_name_attach(lanegroup_id, 'cal_relative_queue'))
+                m.addConstr(total_squared_queue == gp.quicksum(
+                    lanegroup_relative_queue[lanegroup_id] * lanegroup_relative_queue[lanegroup_id]
+                            for lanegroup_id in inflow_lane_groups), name='cal_squared_queue')
                 obj += config['upper_obj_weight']['balance'] * total_squared_queue
             # obj2 (equally distributed): Minimize the variance of normalized throughput,
             # which is equivalent to minimize the summation of squared throughput when obj1 >> obj2
             elif self.distribution_mode == 'equal':
                 m.addConstr(total_squared_throughput == gp.quicksum(
-                    edge_throughput[edge_id] * edge_throughput[edge_id] / pow(edge.throughput_upperbound, 2)
-                    for edge_id, edge in self.peri_data.peri_edges.items()), name='cal_squared_throughput')
+                    lanegroup_throughput[lanegroup_id] * lanegroup_throughput[lanegroup_id] / pow(lanegroup.throughput_upperbound, 2)
+                    for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items()), name='cal_squared_throughput')
                 obj += config['upper_obj_weight']['balance'] * total_squared_throughput
             # obj3 (prevent spillover): Minimize the number of edges with spillover
             if config['peri_spillover_penalty'] is True:
-                m.addConstr(total_spillover == gp.quicksum(edge_spillover[edge_id] for edge_id in inflow_edges) / len(inflow_edges),
+                m.addConstr(total_spillover == gp.quicksum(
+                    lanegroup_spillover[lanegroup_id] for lanegroup_id in inflow_lane_groups) / len(inflow_lane_groups),
                             name='cal_total_spillover')
                 obj += config['upper_obj_weight']['spillover'] * total_spillover
         m.setObjective(obj)
 
         # Add constraints (for inflow movements)
-        for edge_id, edge in self.peri_data.peri_edges.items():
+        for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
             # Constraint 1: Final queue estimation
             # print(f'The arrival rate of edge {edge_id} is {edge.arrival_rate}')
-            print(f'The queue of edge {edge_id} is {edge.total_queue}')
-            m.addConstr(edge_final_queue_estimate[edge_id] == edge.total_queue + cycle * edge.arrival_rate -
-                        edge_throughput[edge_id], name=constr_name_attach(edge_id, 'queue_estimate'))
-            m.addConstr(edge_final_queue[edge_id] == gp.max_(edge_final_queue_estimate[edge_id], 0),
-                        name=constr_name_attach(edge_id, 'queue'))
-            # Constraint 2: edge throughput calculation
-            m.addConstr(edge_green_discharge[edge_id] == edge_green_dur[edge_id] * edge.saturation_flow_rate,
-                        name=constr_name_attach(edge_id, 'green_discharge'))
-            # print(f'The green start of edge {edge_id} is {edge.green_start}')
-            m.addConstr(edge_green_demand[edge_id] == edge.total_queue + edge.arrival_rate * (
-                    edge.green_start[0] + edge_green_dur[edge_id]),
-                        name=constr_name_attach(edge_id, 'green_demand'))
+            print(f'The queue of lane group {lanegroup_id} is {lanegroup.total_queue}')
+            m.addConstr(lanegroup_final_queue_estimate[lanegroup_id] == lanegroup.total_queue + cycle * lanegroup.arrival_rate -
+                        lanegroup_throughput[lanegroup_id], name=constr_name_attach(lanegroup_id, 'queue_estimate'))
+            m.addConstr(lanegroup_final_queue[lanegroup_id] == gp.max_(lanegroup_final_queue_estimate[lanegroup_id], 0),
+                        name=constr_name_attach(lanegroup_id, 'queue'))
+            # Constraint 2: lane group throughput calculation
+            m.addConstr(lanegroup_green_discharge[lanegroup_id] == lanegroup_green_dur[lanegroup_id] * lanegroup.saturation_flow_rate,
+                        name=constr_name_attach(lanegroup_id, 'green_discharge'))
+            # print(f'The green start of lane group {lanegroup_id} is {lanegroup.green_start}')
+            m.addConstr(lanegroup_green_demand[lanegroup_id] == lanegroup.total_queue + lanegroup.arrival_rate * (
+                    lanegroup.green_start[0] + lanegroup_green_dur[lanegroup_id]),
+                        name=constr_name_attach(lanegroup_id, 'green_demand'))
             if config['peri_green_start_model']:
-                m.addConstr(edge_throughput[edge_id] == gp.min_(edge_green_discharge[edge_id], edge_green_demand[edge_id]),
-                            name=constr_name_attach(edge_id, 'throughput'))
+                m.addConstr(lanegroup_throughput[lanegroup_id] == gp.min_(lanegroup_green_discharge[lanegroup_id], lanegroup_green_demand[lanegroup_id]),
+                            name=constr_name_attach(lanegroup_id, 'throughput'))
             else:
-                m.addConstr(edge_throughput[edge_id] == edge_green_discharge[edge_id],
-                            name=constr_name_attach(edge_id, 'throughput'))
+                m.addConstr(lanegroup_throughput[lanegroup_id] == lanegroup_green_discharge[lanegroup_id],
+                            name=constr_name_attach(lanegroup_id, 'throughput'))
             # Constraint 3: Downstream capacity constraint
-            m.addConstr(edge_throughput[edge_id] <= edge.get_downstream_capacity(),
-                        name=constr_name_attach(edge_id, 'down_capacity'))
+            m.addConstr(lanegroup_throughput[lanegroup_id] <= lanegroup.get_downstream_capacity(),
+                        name=constr_name_attach(lanegroup_id, 'down_capacity'))
             # Constraint 4: Minimum / Maximum green duration
-            for movement_id, movement in edge.movements.items():
+            for movement_id, movement in lanegroup.movements.items():
                 if self.signal_phase_mode == 'NEMA':
                     m.addConstr(movement_green_dur[movement_id] <= config['max_green'] - config['min_green'] - yellow,
                                 name=constr_name_attach(movement_id, 'max_green'))
@@ -446,41 +448,41 @@ class PeriSignalController:
                 m.addConstr(movement_green_dur[movement_id] >= config['min_green'],
                             name=constr_name_attach(movement_id, 'min_green'))
             # Constraint 5: Match the signal timing of movement and edge
-            for movement_id, movement in edge.movements.items():
-                m.addConstr(movement_green_dur[movement_id] == edge_green_dur[edge_id],
-                            name=constr_name_attach(edge_id, 'edge_green_duration'))
+            for movement_id, movement in lanegroup.movements.items():
+                m.addConstr(movement_green_dur[movement_id] == lanegroup_green_dur[lanegroup_id],
+                            name=constr_name_attach(lanegroup_id, 'edge_green_duration'))
             # Constraint 6: Judge whether the edge is spillover
             if config['peri_spillover_penalty']:
                 alpha = config['spillover_critical_ratio']
-                m.addConstr(alpha * edge.length - edge_final_queue[edge_id] * edge.vehicle_length / len(edge.lanes) <= M * (1 - edge_spillover[edge_id]),
-                            name=constr_name_attach(edge_id, 'edge_spillover_1'))
-                m.addConstr(alpha * edge.length - edge_final_queue[edge_id] * edge.vehicle_length / len(edge.lanes) >= -M * edge_spillover[edge_id] + 1 / M,
-                            name=constr_name_attach(edge_id, 'edge_spillover_2'))
+                m.addConstr(alpha * lanegroup.length - lanegroup_final_queue[lanegroup_id] * lanegroup.vehicle_length / len(lanegroup.lanes) <= M * (1 - lanegroup_spillover[lanegroup_id]),
+                            name=constr_name_attach(lanegroup_id, 'lanegroup_spillover_1'))
+                m.addConstr(alpha * lanegroup.length - lanegroup_final_queue[lanegroup_id] * lanegroup.vehicle_length / len(lanegroup.lanes) >= -M * lanegroup_spillover[lanegroup_id] + 1 / M,
+                            name=constr_name_attach(lanegroup_id, 'lanegroup_spillover_2'))
 
         m.optimize()
 
         if m.status == gp.GRB.OPTIMAL:
             # calculate the objective value
             inflow, queue_var = 0, 0
-            for edge_id in inflow_edges:
-                inflow += edge_throughput[edge_id].x
+            for lanegroup_id in inflow_lane_groups:
+                inflow += lanegroup_throughput[lanegroup_id].x
             if self.distribution_mode == 'balance_queue':
                 queue_var = total_squared_queue.x
             elif self.distribution_mode == 'equal':
                 queue_var = total_squared_throughput.x
             # extract the optimal solution
-            for edge_id, edge in self.peri_data.peri_edges.items():
-                edge.green_duration = [round(edge_green_dur[edge_id].x)]
-                for lane_id, lane in edge.lanes.items():
-                    lane.green_duration = [round(edge_green_dur[edge_id].x)]
-                for movement_id, movement in edge.movements.items():
+            for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
+                lanegroup.green_duration = [round(lanegroup_green_dur[lanegroup_id].x)]
+                for lane_id, lane in lanegroup.lanes.items():
+                    lane.green_duration = [round(lanegroup_green_dur[lanegroup_id].x)]
+                for movement_id, movement in lanegroup.movements.items():
                     movement.fixed_gated_green = round(movement_green_dur[movement_id].x)
                     for connection_id, connection in movement.connections.items():
                         connection.update_timing()
             # console output
-            for edge_id, edge in self.peri_data.peri_edges.items():
-                if edge_spillover[edge_id].x == 1:
-                    print(f'Edge {edge_id} is oversaturated. ')
+            for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
+                if lanegroup_spillover[lanegroup_id].x == 1:
+                    print(f'Lane group {lanegroup_id} is oversaturated. ')
             print(f'The estimated inflow by model is {inflow}. ')
             return inflow, queue_var
         elif m.status == gp.GRB.INFEASIBLE:
