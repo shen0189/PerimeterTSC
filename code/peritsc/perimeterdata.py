@@ -160,7 +160,7 @@ class LaneGroup:
         self.movements: Dict[str, Movement] = {}
         self.lanes: Dict[str, Lane] = {}
 
-        self.length = 0     # 所在edge的长度
+        self.length = 0     # 等于车道长度
         self.total_capacity = 0             # 所有车道可容纳车辆数, 与
         self.saturation_flow_rate = 0       # 所有车道的饱和流率之和
         self.throughput_upperbound = 0
@@ -168,6 +168,7 @@ class LaneGroup:
         self.total_queue = 0        # 所有车道的排队车辆数之和
         self.vehicle_length = 0     # average vehicle length
         self.saturation_limit = 0
+        self.optimal_throughput = 0         # 使排队稳定在临界位置（待修改）的最优吞吐量
         self.queue_pressure_coef = 0
 
         self.green_start: list = [0]
@@ -184,6 +185,12 @@ class LaneGroup:
             if down_link_capacity < capacity:
                 capacity = down_link_capacity
         return capacity
+
+    def update_optimal_throughput(self, cycle):
+        self.optimal_throughput = self.total_queue + self.arrival_rate * cycle - self.total_capacity * config['spillover_critical_ratio']
+
+    def update_queue_coef(self, network_input, optimal_throughput_list):
+        self.queue_pressure_coef = (sum(optimal_throughput_list) - network_input) / self.optimal_throughput
 
 
 class Intersection:
@@ -257,6 +264,7 @@ class PeriSignals:
         self.peri_nodes: List[str] = [tls['node'] for tls in self.peri_info.values()]
         self.peri_inflows: Dict[str, Movement] = {}     # 仅受控方向
         self.peri_edges: Dict[str, LaneGroup] = {}      # 仅受控方向, lanegroup -> edge
+        self.peri_lane_groups: Dict[str, LaneGroup] = {}     # 暂时仅受控方向
         self.peri_inflow_lanes_by_laneID: Dict[str, Lane] = {}      # 仅受控方向
         self.peri_inflow_lanes: List[tuple] = []    # 仅受控方向
         self.peri_downstream_links: Dict[str, DownstreamLink] = {}
@@ -376,29 +384,38 @@ class PeriSignals:
             for connection in peri_signal.connections.values():
                 connection.yellow_duration = config['yellow_duration']
 
-        # Add lane-group definitions for inflow edges after the basic elements determined
+        # Add lane-group definitions for inflow edges after the basic elements determined (new)
         for tls_id, tls_info in config['Peri_info'].items():
             inflow_edge_id = str(tls_info['edge'])
-            new_lane_group = LaneGroup(group_id=inflow_edge_id, tls_id=tls_id)
-            # Add lanes and movements
-            for lane_id, lane in self.peri_signals[tls_id].in_lanes.items():
-                if lane.edge == inflow_edge_id:
+            lane_group_list = tls_info['inflow_lane_groups']
+            current_lane_index = 0      # 当前要加入车道组的车道
+            for group_id, lane_num in enumerate(lane_group_list):
+                group_id = '_'.join((inflow_edge_id, str(group_id)))
+                new_lane_group = LaneGroup(group_id=group_id, tls_id=tls_id)
+                # Add lanes and movements
+                for i in range(lane_num):
+                    lane_id = '_'.join((inflow_edge_id, str(current_lane_index + i)))
+                    lane = self.peri_signals[tls_id].in_lanes[lane_id]
                     new_lane_group.lanes[lane_id] = lane
                     for movement_id, movement in lane.movements.items():
                         if movement_id not in new_lane_group.movements:
                             new_lane_group.movements[movement_id] = movement
-            # Add parameters
-            new_lane_group.length = np.mean([lane.length for lane in new_lane_group.lanes.values()])
-            new_lane_group.total_capacity = sum([lane.capacity for lane in new_lane_group.lanes.values()])
-            new_lane_group.saturation_flow_rate = sum([lane.saturation_flow_rate for lane in new_lane_group.lanes.values()])
-            new_lane_group.saturation_limit = config['saturation_limit']
-            new_lane_group.yellow_duration = config['yellow_duration']
-            new_lane_group.min_green = config['min_green']
-            new_lane_group.max_green = config['max_green']
-            new_lane_group.vehicle_length = config['vehicle_length']
-            new_lane_group.throughput_upperbound = new_lane_group.max_green * new_lane_group.saturation_flow_rate
-            new_lane_group.queue_pressure_coef = 1 / (2 * new_lane_group.total_capacity * config['spillover_critical_ratio'])
-            self.peri_edges[inflow_edge_id] = new_lane_group
+                current_lane_index += lane_num
+                # Add parameters
+                new_lane_group.length = np.mean([lane.length for lane in new_lane_group.lanes.values()])
+                new_lane_group.total_capacity = sum([lane.capacity for lane in new_lane_group.lanes.values()])
+                new_lane_group.saturation_flow_rate = sum(
+                    [lane.saturation_flow_rate for lane in new_lane_group.lanes.values()])
+                new_lane_group.saturation_limit = config['saturation_limit']
+                new_lane_group.yellow_duration = config['yellow_duration']
+                new_lane_group.min_green = config['min_green']
+                new_lane_group.max_green = config['max_green']
+                new_lane_group.vehicle_length = config['vehicle_length']
+                new_lane_group.throughput_upperbound = new_lane_group.max_green * new_lane_group.saturation_flow_rate
+                new_lane_group.queue_pressure_coef = 1 / (
+                            2 * new_lane_group.total_capacity * config['spillover_critical_ratio'])
+                self.peri_lane_groups[group_id] = new_lane_group
+
 
     def get_all_lanes(self):
         peri_lanes = []
