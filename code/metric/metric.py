@@ -488,24 +488,32 @@ class Metric():
         file = file.split('.')
         file = '.'.join([file[0], 'csv'])
 
-        df = pd.read_csv(file, sep=';', usecols=['tripinfo_depart', 'tripinfo_departLane',
+        df = pd.read_csv(file, sep=';', usecols=['tripinfo_depart', 'tripinfo_departLane', 'tripinfo_departDelay',
                                                  'tripinfo_arrival', 'tripinfo_arrivalLane', 'tripinfo_duration'])
         df['arrival_interval'] = df['tripinfo_arrival'] // 20 * 20
         # 根据出发/到达车道区分trip类型
         df['depart_edge'] = df['tripinfo_departLane'].str.split('_').str[0].astype(int)
         df['arrival_edge'] = df['tripinfo_arrivalLane'].str.split('_').str[0].astype(int)
         df['trip_type'] = df.apply(get_trip_type, axis=1)
+        # 计算真实trip time
+        df['tripinfo_duration'] += df['tripinfo_departDelay']
 
-        df_travel = df.groupby(['trip_type', 'arrival_interval'], as_index=False)['tripinfo_duration'].sum()
-        df_travel = df_travel.reset_index()
-        df_all_types_travel = df.groupby(['arrival_interval'], as_index=False)['tripinfo_duration'].sum()
-        df_all_types_travel = df_all_types_travel.reset_index()
+        df_travel = df.groupby(['trip_type', 'arrival_interval'], as_index=False).agg(
+            vehicle_num=('tripinfo_arrival', 'count'),
+            tripinfo_duration=('tripinfo_duration', 'sum')
+        ).reset_index()
+        df_all_types_travel = df.groupby(['arrival_interval'], as_index=False).agg(
+            vehicle_num=('tripinfo_arrival', 'count'),
+            tripinfo_duration=('tripinfo_duration', 'sum')
+        ).reset_index()
 
         # key值: 可以设置为demand类型
-        trip_data = {}
+        trip_data = {'travel_time': {}, 'travel_veh_count': {}}
         for trip_type in ['in-in', 'in-out', 'out-in']:
-            trip_data[trip_type] = list(df_travel[df_travel['trip_type'] == trip_type]['tripinfo_duration'])
-        trip_data['total'] = list(df_all_types_travel['tripinfo_duration'])
+            trip_data['travel_time'][trip_type] = list(df_travel[df_travel['trip_type'] == trip_type]['tripinfo_duration'])
+            trip_data['travel_veh_count'][trip_type] = list(df_travel[df_travel['trip_type'] == trip_type]['vehicle_num'])
+        trip_data['travel_time']['total'] = list(df_all_types_travel['tripinfo_duration'])
+        trip_data['travel_veh_count']['total'] = list(df_all_types_travel['vehicle_num'])
 
         return trip_data
 
