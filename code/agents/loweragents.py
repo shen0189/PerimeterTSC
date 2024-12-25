@@ -34,7 +34,7 @@ class LowerAgents:
         self.tsc = tsc
         self.netdata = netdata
         self.peridata = peridata
-        self.perimeter_light = list(config['Peri_info'].keys()) + ['P0', 'P1', 'P2', 'P3']
+        self.perimeter_light = list(config['Peri_info'].keys())      # + ['P0', 'P1', 'P2', 'P3']
         self.lower_mode = config['lower_mode']
         self.upper_mode = config['upper_mode']
         self.mode = config['mode']
@@ -450,7 +450,7 @@ class LowerAgents:
         total_throughput_progression = [sum(total_throughput[:i+1]) for i in range(len(total_throughput))]
         lower_metric['peri_throughput'] = total_throughput_progression
 
-        ''' 4.2 peri inflow queue length (maximum queue length in one cycle) '''
+        ''' 4.2 peri inflow queue length (maximum queue length in one interval) '''
         lower_metric['peri_queue'] = queue_data
 
         ''' 4.3 peri spillover times '''
@@ -469,11 +469,18 @@ class LowerAgents:
         lower_metric['peri_delay'] = avg_delay
 
         ''' 5.1 vehicle travel time '''
-        travel_time_record = {}
-        for trip_type, trip_travel_time in trip_data.items():
+        total_travel_time_record, avg_travel_time_record = {}, {}
+        # travel_veh_record = {}
+        trip_type_list = ['in-in', 'in-out', 'out-in', 'total']
+        for trip_type in trip_type_list:
+            trip_travel_time, trip_travel_veh = trip_data['travel_time'][trip_type], trip_data['travel_veh_count'][trip_type]
             travel_time_progression = [sum(trip_travel_time[:i + 1]) for i in range(len(trip_travel_time))]
-            travel_time_record[trip_type] = travel_time_progression
-        lower_metric['total_travel_time'] = travel_time_record
+            total_travel_time_record[trip_type] = travel_time_progression
+            travel_veh_progression = [sum(trip_travel_veh[:i + 1]) for i in range(len(trip_travel_veh))]
+            avg_travel_time_progession = [tt/v_cnt for (tt, v_cnt) in zip(travel_time_progression, travel_veh_progression)]
+            avg_travel_time_record[trip_type] = avg_travel_time_progession
+        lower_metric['total_travel_time'] = total_travel_time_record
+        lower_metric['avg_travel_time'] = avg_travel_time_record
 
         return lower_metric
 
