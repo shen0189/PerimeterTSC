@@ -11,7 +11,7 @@ from typing import Dict
 class Peri_Agent():
     def __init__(self, tsc_peri, peridata: PeriSignals):
         # control mode
-        self.distribution_mode = config['peri_distribution_mode']
+        self.distribution_mode = config['peri_control_mode']
         self.signal_phase_mode = config['peri_signal_phase_mode']
         self.optimization_mode = config['peri_optimization_mode']
 
@@ -117,6 +117,10 @@ class Peri_Agent():
     def get_full_greensplit(self, action):
         """
         distribute the vehicles on perimeter nodes with green split
+
+        Args:
+        action (float): Aggregate metering rate of the network (veh/s)
+
         """
         # 1. Update the arrival rate and queue of each lane of last step
         for signal_id, signal in self.peridata.peri_signals.items():
@@ -131,17 +135,26 @@ class Peri_Agent():
         for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
             inflow_lanegroup.total_queue = sum([lane.queue for lane in inflow_lanegroup.lanes.values()])
             inflow_lanegroup.arrival_rate = sum([lane.arrival_rate for lane in inflow_lanegroup.lanes.values()])
-            for lane_id, lane in inflow_lanegroup.lanes.items():
+            for lane_id, lane in inflow_lanegroup.lanes.items():    # 将同车道组的车道流量均分
                 lane.arrival_rate = inflow_lanegroup.arrival_rate / len(inflow_lanegroup.lanes)
 
-        # 3. Optimize the signal plan of all perimeter intersections
+        # 3. Update the target state and the queue coefficient for each lane group
+        for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
+            inflow_lanegroup.update_target_state(self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
+        target_inflow_list = [lg.target_inflow for lg in self.peridata.peri_lane_groups.values()]
+        for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
+            inflow_lanegroup.update_queue_coef(control_mode=self.distribution_mode,
+                                               optimal_inflow=action, target_inflows=target_inflow_list,
+                                               cycle=self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
+
+        # 4. Optimize the signal plan of all perimeter intersections
         if self.signal_phase_mode == 'Slot':
             controller = TimeSlotPeriSignalController(self.peridata, action, self.slot_num)
         else:
             controller = PeriSignalController(self.peridata, action)
         estimate_inflow = controller.signal_optimize()
 
-        # 3. record green time data
+        # 5. record green time data
         inflow_movement_green_time = self.peridata.get_inflow_green_duration()
         self.inflow_movements = list(inflow_movement_green_time.keys())
         self.green_time = np.reshape(np.append(self.green_time, list(inflow_movement_green_time.values())),
