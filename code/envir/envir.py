@@ -190,7 +190,7 @@ class Simulator():
                     # 更新laststep_vehicle
                     lane.laststep_vehicles = vehicles
 
-        if self._step % config['infostep'] == 0:
+        if self._step % config['updatestep'] == 0:
             # 每个interval结束且更新了排队后, 更新离开车辆数
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
