@@ -131,7 +131,7 @@ class Lane:
         self.capacity = capacity
 
     def update_traffic_state(self):
-        self.arrival_rate = len(self.entered_vehicles) / config['infostep']
+        self.arrival_rate = len(self.entered_vehicles) / config['updatestep']
         self.entered_vehicles = []
         self.queue = len(self.queueing_vehicles)
 
@@ -162,19 +162,25 @@ class LaneGroup:
 
         self.length = 0     # 等于车道长度
         self.total_capacity = 0             # 所有车道可容纳车辆数, 与
-        self.saturation_flow_rate = 0       # 所有车道的饱和流率之和
+        self.saturation_flow_rate = 0       # 所有车道的饱和流率之和, veh/h
         self.throughput_upperbound = 0
-        self.arrival_rate = 0       # 所有车道的到达率之和
-        self.total_queue = 0        # 所有车道的排队车辆数之和
+        self.arrival_rate = 0       # sum of all lanes, veh/s
+        self.total_queue = 0        # veh
         self.vehicle_length = 0     # average vehicle length
         self.saturation_limit = 0
-        self.optimal_throughput = 0         # 使排队稳定在临界位置（待修改）的最优吞吐量
+
+        self.optimal_inflow = 0         # 上层模型优化结果, veh/s
         self.queue_pressure_coef = 0
+        self.critical_queue_vehicle = 0
+        self.target_queue_vehicle = 0
+        self.target_inflow = 0        # veh/s
 
         self.green_start: list = [0]
         self.green_duration: list = [0]
         self.min_green = 0
         self.max_green = 0
+        self.min_inflow = 0
+        self.max_inflow = 0
         self.yellow_duration = 0
 
     def get_downstream_capacity(self):
@@ -186,12 +192,24 @@ class LaneGroup:
                 capacity = down_link_capacity
         return capacity
 
-    def update_optimal_throughput(self, cycle):
-        self.optimal_throughput = self.total_queue + self.arrival_rate * cycle - self.total_capacity * config['spillover_critical_ratio']
+    def update_target_state(self, cycle):
+        """
+        Update the target state before
+        """
+        self.target_inflow = max(self.total_queue / cycle + self.arrival_rate - self.critical_queue_vehicle / cycle,
+                                 self.min_inflow)
+        self.target_queue_vehicle = max(self.total_queue + self.arrival_rate * cycle - self.target_inflow * cycle, 1)
 
-    def update_queue_coef(self, network_input, optimal_throughput_list):
-        self.queue_pressure_coef = (sum(optimal_throughput_list) - network_input) / self.optimal_throughput
 
+    def update_queue_coef(self, control_mode, optimal_inflow, target_inflows, cycle):
+        if control_mode == 'PI-Balance':
+            if sum(target_inflows) <= optimal_inflow:
+                self.queue_pressure_coef = self.target_queue_vehicle / config['M']
+            else:
+                print(f'Balance mode activate for lanegroup {self.id}')
+                self.queue_pressure_coef = (sum(target_inflows) - optimal_inflow) * self.target_queue_vehicle / cycle
+        elif control_mode in ['PI-Cordon', 'PI']:
+            self.queue_pressure_coef = 1 / config['M']
 
 class Intersection:
 
@@ -201,6 +219,7 @@ class Intersection:
         self.in_lanes: Dict[str, Lane] = {}
         self.movements: Dict[str, Movement] = {}
         self.connections: Dict[str, Connection] = {}
+        self.lane_groups: Dict[str, LaneGroup] = {}
         self.conflict_matrix = {}
         self.downLinks: Dict[str, DownstreamLink] = {}
         self.cycle = 0
@@ -224,6 +243,10 @@ class Intersection:
     def add_lane(self, new_lane: Lane):
         if new_lane.id not in self.in_lanes:
             self.in_lanes[new_lane.id] = new_lane
+
+    def add_lane_group(self, new_lane_group: LaneGroup):
+        if new_lane_group.id not in self.lane_groups:
+            self.lane_groups[new_lane_group.id] = new_lane_group
 
     def add_downstream_link(self, new_downstream_link: DownstreamLink):
         if new_downstream_link.id not in self.downLinks:
@@ -379,6 +402,7 @@ class PeriSignals:
                 lane.min_green = config['min_green']
                 lane.max_green = config['max_green']
                 lane.yellow_duration = config['yellow_duration']
+                # TODO: 根据车道类型修改饱和流率
                 lane.saturation_flow_rate = config['saturation_flow_rate']
                 lane.saturation_limit = config['saturation_limit']
             for connection in peri_signal.connections.values():
@@ -410,11 +434,17 @@ class PeriSignals:
                 new_lane_group.yellow_duration = config['yellow_duration']
                 new_lane_group.min_green = config['min_green']
                 new_lane_group.max_green = config['max_green']
+                new_lane_group.min_inflow = config['min_green'] / config['cycle_time'] * sum(
+                    [lane.saturation_flow_rate for lane in new_lane_group.lanes.values()])
+                new_lane_group.max_inflow = config['max_green'] / config['cycle_time'] * sum(
+                    [lane.saturation_flow_rate for lane in new_lane_group.lanes.values()])
                 new_lane_group.vehicle_length = config['vehicle_length']
                 new_lane_group.throughput_upperbound = new_lane_group.max_green * new_lane_group.saturation_flow_rate
-                new_lane_group.queue_pressure_coef = 1 / (
-                            2 * new_lane_group.total_capacity * config['spillover_critical_ratio'])
+                new_lane_group.critical_queue_vehicle = new_lane_group.total_capacity * config['spillover_critical_ratio']
+                # new_lane_group.queue_pressure_coef = 1 / (
+                #             2 * new_lane_group.total_capacity * config['spillover_critical_ratio'])
                 self.peri_lane_groups[group_id] = new_lane_group
+                self.peri_signals[tls_id].add_lane_group(new_lane_group)
 
 
     def get_all_lanes(self):
