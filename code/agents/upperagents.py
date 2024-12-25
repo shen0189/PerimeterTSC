@@ -235,21 +235,18 @@ class UpperAgents:
         # 1. get action
         self.a, is_expert = self.get_action_all(self.old_state)
 
-        # 2.action coordination (a in veh)
+        # 2.action coordination (a in veh/s)
         # a = self._action_coordinate_transformation(self.max_green, self.a)
-        # transform a from veh/h to number of vehicles
-        # a = self.a / 3600 * config['cycle_time']
         a = self.a
-        print("Inflow given by PI controller: ", a)
+        a_veh = a * config['cycle_time']
+        print("Inflow vehicle number given by PI controller: ", a_veh)
         self.ordered_action.append(a)
 
         # 3. assign the vehicle to each perimeter and obtain the phase duration
-        # green_time, red_time = self.perimeter.get_greensplit(a, step)
         estimate_inflow = self.perimeter.get_full_greensplit(a)
         self.estimated_inflow.append(estimate_inflow)
 
         # 4. set program
-        # self.perimeter.set_program(green_time, red_time)
         self.perimeter.set_full_program()
 
     def get_action_all(self, old_state):
@@ -1286,11 +1283,11 @@ class MFD_PI(UpperAgents):
         self.q_record = [] # record of actions
         self.accu_last = 0
 
-        # the maximum inflow of the network each step (veh/h)
-        # self.q_max = config['saturation_flow_rate'] * \
-        #     self.max_green * len(peridata.peri_inflow_lanes)
-        self.q_max = config['saturation_flow_rate'] * config['max_green'] * len(peridata.peri_inflow_lanes)
-        self.q_min = config['saturation_flow_rate'] * config['min_green'] * len(peridata.peri_inflow_lanes)
+        # the maximum inflow of the network each step (veh/s)
+        self.q_max = config['network_maximal_inflow']
+        self.q_min = config['network_minimal_inflow']
+        # self.q_max = config['saturation_flow_rate'] * config['max_green'] * len(peridata.peri_inflow_lanes)   # veh
+        # self.q_min = config['saturation_flow_rate'] * config['min_green'] * len(peridata.peri_inflow_lanes)
 
     def get_action(self, s):
         ''' PI control using keyvan-Ekbatani 2019, Page8, Eq 10
