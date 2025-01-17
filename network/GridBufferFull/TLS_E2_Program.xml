@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2024-07-06 21:45:04 by Eclipse SUMO netedit Version 1.18.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/neteditConfiguration.xsd">
+
+    <input>
+        <sumo-net-file value="D:\学习资料\研究生\2 个人研究\Signal timing with perimeter control\Codes\network\GridBufferNew\GridBuffer.net.xml"/>
+    </input>
+
+    <processing>
+        <geometry.min-radius.fix.railways value="false"/>
+        <geometry.max-grade.fix value="false"/>
+        <offset.disable-normalization value="true"/>
+        <lefthand value="0"/>
+    </processing>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+        <junctions.corner-detail value="5"/>
+        <junctions.limit-turn-speed value="5.50"/>
+        <rectangular-lane-cut value="0"/>
+    </junctions>
+
+    <pedestrian>
+        <walkingareas value="0"/>
+    </pedestrian>
+
+</configuration>
+-->
+
+<additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+    <tlLogic id="E2" type="static" programID="0" offset="0">
+        <phase duration="25" state="GGrrrrrGGGrrrrr"/>
+        <phase duration="5" state="yyrrrrryyyrrrrr"/>
+        <phase duration="20" state="rrGrrrrrrrGrrrr"/>
+        <phase duration="5" state="rryrrrrrrryrrrr"/>
+        <phase duration="25" state="rrrGGGGrrrrGGGr"/>
+        <phase duration="5" state="rrryyyyrrrrGGGr"/>
+        <phase duration="10" state="rrrrrrrrrrrGGGG"/>
+        <phase duration="5" state="rrrrrrrrrrryyyy"/>
+    </tlLogic>
+</additional>

@@ -1,0 +1,32 @@
+<routes>
+	<flow id="F38_0" from="38" begin="0" end="270" vehsPerHour="346"/>
+	<flow id="F58_0" from="58" begin="0" end="270" vehsPerHour="393"/>
+	<flow id="F78_0" from="78" begin="0" end="270" vehsPerHour="385"/>
+	<flow id="F31_0" from="31" begin="0" end="270" vehsPerHour="378"/>
+	<flow id="F51_0" from="51" begin="0" end="270" vehsPerHour="341"/>
+	<flow id="F71_0" from="71" begin="0" end="270" vehsPerHour="404"/>
+	<flow id="F38_1" from="38" begin="270" end="540" vehsPerHour="692"/>
+	<flow id="F58_1" from="58" begin="270" end="540" vehsPerHour="787"/>
+	<flow id="F78_1" from="78" begin="270" end="540" vehsPerHour="770"/>
+	<flow id="F31_1" from="31" begin="270" end="540" vehsPerHour="757"/>
+	<flow id="F51_1" from="51" begin="270" end="540" vehsPerHour="683"/>
+	<flow id="F71_1" from="71" begin="270" end="540" vehsPerHour="808"/>
+	<flow id="F38_2" from="38" begin="540" end="810" vehsPerHour="1039"/>
+	<flow id="F58_2" from="58" begin="540" end="810" vehsPerHour="1180"/>
+	<flow id="F78_2" from="78" begin="540" end="810" vehsPerHour="1155"/>
+	<flow id="F31_2" from="31" begin="540" end="810" vehsPerHour="1136"/>
+	<flow id="F51_2" from="51" begin="540" end="810" vehsPerHour="1025"/>
+	<flow id="F71_2" from="71" begin="540" end="810" vehsPerHour="1212"/>
+	<flow id="F38_3" from="38" begin="810" end="1080" vehsPerHour="692"/>
+	<flow id="F58_3" from="58" begin="810" end="1080" vehsPerHour="787"/>
+	<flow id="F78_3" from="78" begin="810" end="1080" vehsPerHour="770"/>
+	<flow id="F31_3" from="31" begin="810" end="1080" vehsPerHour="757"/>
+	<flow id="F51_3" from="51" begin="810" end="1080" vehsPerHour="683"/>
+	<flow id="F71_3" from="71" begin="810" end="1080" vehsPerHour="808"/>
+	<flow id="F38_4" from="38" begin="1080" end="1350" vehsPerHour="346"/>
+	<flow id="F58_4" from="58" begin="1080" end="1350" vehsPerHour="393"/>
+	<flow id="F78_4" from="78" begin="1080" end="1350" vehsPerHour="385"/>
+	<flow id="F31_4" from="31" begin="1080" end="1350" vehsPerHour="378"/>
+	<flow id="F51_4" from="51" begin="1080" end="1350" vehsPerHour="341"/>
+	<flow id="F71_4" from="71" begin="1080" end="1350" vehsPerHour="404"/>
+</routes>
