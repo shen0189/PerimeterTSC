@@ -226,11 +226,19 @@ class UpperAgents:
     def implem_action_all(self, step):
         ''' get state, get action, implement action
         '''
-        # no action for Static controller
-        if self.peri_mode == 'Static' or self.peri_mode == 'MaxPressure':
-            return
 
         print(f'Current time step: {step}')
+
+        # no action for MP controller
+        if self.peri_mode == 'MaxPressure':
+            return
+
+        # change the signal program after given time for static controller
+        if self.peri_mode == 'Static':
+            if step >= config['switch_signal_plan_step'] and self.perimeter.switch_to_normal_plan is False:
+                self.perimeter.set_normal_program_for_static()
+                self.perimeter.switch_to_normal_plan = True
+            return
 
         # 1. get action
         self.a, is_expert = self.get_action_all(self.old_state)
