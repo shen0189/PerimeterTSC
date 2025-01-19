@@ -389,6 +389,16 @@ class LowerAgents:
         ''' 1.4 network perveh delay mean over the simulation horizon (perveh delay per second) '''
         lower_metric['network_perveh_delay_mean'] = lane_data['network_perveh_delay_mean']
 
+        ''' 1.5 network accumulation '''
+        accu_epis = np.sum(
+            (lane_data['sampledSeconds'] / step), axis=1)
+        # accu_epis = self._fill_metric_values(accu_epis)
+        lower_metric['accu'] = accu_epis
+
+        ''' 1.6 network flow '''
+        flow_epis = np.mean(
+            lane_data['speed'] * lane_data['density'] * 3.6, axis=1)  # veh/h
+        lower_metric['flow'] = flow_epis
 
         ''' 2. individual controlled tsc level'''
         ## init dict for tsc metrics
