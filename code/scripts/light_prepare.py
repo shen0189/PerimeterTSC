@@ -2,10 +2,9 @@ import sys, os
 # from libsumo.libsumo import lane
 p = os.path.dirname(__file__)
 print(p)
-sys.path.append(os.path.join(p, '../')) 
-import networkdata
-from networkdata import NetworkData
-from utilize import set_sumo, config
+sys.path.append(os.path.join(p, '../'))
+from utils.networkdata import NetworkData
+from utils.utilize import set_sumo, config
 import numpy as np
 import traci
 from math import atan2, pi
@@ -86,8 +85,12 @@ def get_phase_lane_matrix(tl):
             ['w_slr'],    # south_left, north_left
             ['e_slr'],    # south_left, north_left
             ['n_slr'],    # south_left, north_left
-            ['s_slr','n_slr'],
-            ['w_slr','e_slr'],
+            # ['s_slr','n_slr'],
+            # ['w_slr','e_slr'],
+            ['s_sr', 'n_sr'],
+            ['w_sr', 'e_sr'],
+            ['s_l', 'n_l'],
+            ['w_l', 'e_l'],
             ]
     if len(tl.incoming_edges) ==3:
         phases = [ 
@@ -126,12 +129,12 @@ def get_phase_lane_matrix(tl):
                 phase_move = set(phase_move)
                 inedge = inlane.split('_')[0]
 
-                ## the phase can cover the edge move
-                if set(tl.incoming_move_edge[inedge]).issubset(phase_move):
+                # ## the phase can cover the edge move
+                # if set(tl.incoming_move_edge[inedge]).issubset(phase_move):
                     
-                    ## the phase can cover the lane move
-                    if lane_dir in phase_dir and lane_move.issubset(phase_move):
-                        phase_lane_matrix[phase_idx, inlane_idx] = 1
+                ## the phase can cover the lane move
+                if lane_dir in phase_dir and lane_move.issubset(phase_move):
+                    phase_lane_matrix[phase_idx, inlane_idx] = 1
 
     phase_capacity_matrix = np.ones([phases.shape[0],12])
     ## complete phase_capacity_matrix
@@ -146,8 +149,8 @@ def get_phase_lane_matrix(tl):
             if phase_lane_matrix[phase_idx, inlane_idx]:
 
                 ## more than one phase, discount is needed
-                if len(phase)>1 and 'l' in lane_move:
-                    phase_capacity_matrix[phase_idx, inlane_idx] = 0.5
+                if len(phase)>1 and 'l' in lane_move and phase[0][-1] != 'l':
+                    phase_capacity_matrix[phase_idx, inlane_idx] = 0.2      # permitted left-turn
 
 
 
@@ -236,7 +239,7 @@ if __name__ == "__main__":
     traci.close()
     print('Done')    
 
-    with open('tls_bloom_05.pkl', 'wb') as f:
+    with open('code/tls_full_02.pkl', 'wb') as f:
         pickle.dump([MATRIX, SIGNAL, CAPACITY], f)
     
     print('##### save success ####')
