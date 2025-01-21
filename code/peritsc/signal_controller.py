@@ -347,14 +347,13 @@ class PeriSignalController:
 
         # Other variables
         inflow_diff: gp.Var = m.addVar(lb=-gp.GRB.INFINITY, name='inflow_diff')
-        squared_inflow_diff: gp.Var = m.addVar(lb=0, name='squared_inflow_diff')
         total_squared_queue: gp.Var = m.addVar(lb=0, name='squared_queue')
         total_squared_vcratio: gp.Var = m.addVar(lb=0, name='squared_vcratio')
 
         # Add constraints (for inflow movements)
         for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
             # Constraint 1: Final queue estimation
-            print(f'The queue of lane group {lanegroup_id} is {lanegroup.total_queue}')
+            # print(f'The queue of lane group {lanegroup_id} is {lanegroup.total_queue}')
             m.addConstr(lanegroup_final_queue_estimate[lanegroup_id] == lanegroup.total_queue + cycle * lanegroup.arrival_rate -
                 cycle * lanegroup_inflow[lanegroup_id], name=constr_name_attach(lanegroup_id, 'estimate_queue'))
             m.addConstr(lanegroup_final_queue[lanegroup_id] == gp.max_(lanegroup_final_queue_estimate[lanegroup_id], 0),
@@ -383,27 +382,16 @@ class PeriSignalController:
         # obj1: Difference between total inflow and required total inflow
         m.addConstr(inflow_diff == (gp.quicksum(
             lanegroup_inflow[lanegroup_id] for lanegroup_id in inflow_lane_groups) - self.metering_rate), name='cal_diff')
-        # m.addConstr(squared_inflow_diff == inflow_diff * inflow_diff, name='cal_squared_diff')
-        # TODO: why nonconvex?
-        m.addConstr(squared_inflow_diff == gp.abs_(inflow_diff))
-        obj += squared_inflow_diff
+        obj += inflow_diff * inflow_diff
         if config['peri_control_mode'] in ['PI-Cordon', 'PI-Balance']:
             # obj2: Queue punishment
-            m.addConstr(total_squared_queue == gp.quicksum(
-                lanegroup_relative_queue[lanegroup_id] * lanegroup_relative_queue[
+            for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
+                obj += lanegroup_relative_queue[lanegroup_id] * lanegroup_relative_queue[
                     lanegroup_id] * lanegroup.queue_pressure_coef
-                for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items()),
-                        name='cal_queue_pressure')
-            obj += total_squared_queue
         elif config['peri_control_mode'] == 'PI':
             # obj2: v/c ratio balance (i.e., proportional to SFR)
-            m.addConstr(total_squared_vcratio == gp.quicksum(
-                lanegroup_vcratio[lanegroup_id] * lanegroup_vcratio[
-                    lanegroup_id] * lanegroup.queue_pressure_coef
-                for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items()),
-                        name='cal_vcratio')
-            obj += total_squared_vcratio
-
+            for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
+                obj += lanegroup_vcratio[lanegroup_id] * lanegroup_vcratio[lanegroup_id] * lanegroup.queue_pressure_coef
         m.setObjective(obj)
 
         m.optimize()
@@ -420,8 +408,6 @@ class PeriSignalController:
             # extract the optimal solution
             for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
                 lanegroup.optimal_inflow = lanegroup_inflow[lanegroup_id].x
-            # console output
-            print(f'The estimated inflow by model is {inflow}. ')
             return inflow, queue_var
         elif m.status == gp.GRB.INFEASIBLE:
             # m.computeIIS()
@@ -456,39 +442,45 @@ class PeriSignalController:
             m.setParam(gp.ParamConstClass.DualReductions, 0)
 
             movements = list(signal.movements)
+            all_nema_modes = list(config['phase_sequence'])
             movement_matrix = [(mov1, mov2) for mov1 in movements for mov2 in movements if mov2 != mov1]
             lanes = list(signal.in_lanes)
-            lanegroups = list(signal.lane_groups)
+            inflow_lanegroups = [lg_id for lg_id, lg in signal.lane_groups.items() if lg.type == 'inflow']
 
             # Decision variables: green start and duration; phase sequence
             lane_green_start = m.addVars(lanes, lb=0)
             lane_green_dur = m.addVars(lanes, lb=0)
             movement_green_start = m.addVars(movements, lb=0)
             movement_green_dur = m.addVars(movements, lb=0)
-            movement_sequence = m.addVars(movement_matrix, vtype=gp.GRB.BINARY)
+            nema_mode = m.addVars(all_nema_modes, vtype=gp.GRB.BINARY)     # sum=1
+            movement_sequence = m.addVars(movement_matrix, vtype=gp.GRB.BINARY)     # group-based
 
             # Auxiliary variables
             lane_throughput = m.addVars(lanes, lb=0)
             lane_green_discharge = m.addVars(lanes, lb=0)
             lane_green_demand = m.addVars(lanes, lb=0)
             total_throughput = m.addVar(lb=0, name='total_thrp')
-            inflow_throughput_diff = m.addVars(lanegroups, lb=0)
+            inflow_throughput_diff = m.addVars(inflow_lanegroups, lb=0)
+            squared_inflow_diff = m.addVars(inflow_lanegroups, lb=0)
             total_squared_inflow_diff = m.addVar(lb=0)
 
             obj = 0
             # obj1: Minimize the difference between the throughput and the optimal flow rate for gated inflow
-            for lane_group_id ,lane_group in signal.lane_groups.items():
-                m.addConstr(inflow_throughput_diff[lane_group_id] == (
-                        lane_group.optimal_inflow * signal.cycle - gp.quicksum(lane_throughput[lane_id] for lane_id in lane_group.lanes)),
-                            name=constr_name_attach(signal_id, lane_group_id, 'cal_inflow_diff'))
-            m.addConstr(total_squared_inflow_diff == gp.quicksum(
-                inflow_throughput_diff[lg_id] * inflow_throughput_diff[lg_id] for lg_id in signal.lane_groups),
-                        name='cal_total_inflow_diff')
-            obj += total_squared_inflow_diff
+            # Activated when the optimal inflow does not exceed the demand too much on the gated lane-group
+            for lane_group_id, lane_group in signal.lane_groups.items():
+                if lane_group.type == 'inflow':
+                    optimal_inflow = lane_group.optimal_inflow * signal.cycle
+                    maximal_demand = lane_group.total_queue + lane_group.arrival_rate * signal.cycle
+                    if optimal_inflow - maximal_demand < 2:
+                        print(f'Gated inflow requirement activated on lane group {lane_group_id} with optimal inflow {optimal_inflow}. ')
+                        m.addConstr(inflow_throughput_diff[lane_group_id] == (
+                                lane_group.optimal_inflow * signal.cycle - gp.quicksum(lane_throughput[lane_id] for lane_id in lane_group.lanes)),
+                                    name=constr_name_attach(signal_id, lane_group_id, 'cal_inflow_diff'))
+                        obj += inflow_throughput_diff[lane_group_id] * inflow_throughput_diff[lane_group_id]
             # obj2: Maximize the (weighted) normalized throughput
             m.addConstr(total_throughput == gp.quicksum(lane_throughput[lane_id] for lane_id in signal.in_lanes),
                         name='cal_thrp')
-            obj -= total_throughput / config['M']
+            obj -= total_throughput / M
             m.setObjective(obj)
 
             # Add constraints
@@ -514,32 +506,70 @@ class PeriSignalController:
             # Constraint 4: Phase order (Signal timing of movement)
             # Constraint 4.1: Phase order for NEMA
             if self.signal_phase_mode == 'NEMA':
-                phase_order = self.peri_data.peri_info[signal_id]['nema_plan']
-                barrier_movement = []  # 每个ring的第二个barrier的首个movement
-                for ring_name, ring in phase_order.items():
-                    for idx in range(0, len(ring) - 1):
-                        pred_movement, succ_movement = ring[idx], ring[idx + 1]
-                        # 4.1.1 start and end of the cycle
-                        if idx == 0:
-                            m.addConstr(movement_green_start[pred_movement] == 0,
-                                        name=constr_name_attach(ring_name, 'start'))
-                        elif idx == len(ring) - 2:
-                            m.addConstr(movement_green_start[succ_movement] + movement_green_dur[
-                                succ_movement] + yellow == signal.cycle,
-                                        name=constr_name_attach(ring_name, 'end'))
-                        # 4.1.2 normal phase order
-                        if pred_movement == '':
-                            barrier_movement.append(succ_movement)
-                            continue
-                        if succ_movement == '':
-                            succ_movement = ring[idx + 2]
-                        m.addConstr(movement_green_start[pred_movement] + movement_green_dur[
-                            pred_movement] + yellow == movement_green_start[succ_movement],
-                                    name=constr_name_attach(ring_name, str(idx)))
-                # 4.1.3 barrier time
-                ring1_second_barrier_movement, ring2_second_barrier_movement = barrier_movement
-                m.addConstr(movement_green_start[ring1_second_barrier_movement] == movement_green_start[
-                            ring2_second_barrier_movement], name='barrier')
+                # FullGrid
+                m.addConstr(gp.quicksum(nema_mode[mode] for mode in all_nema_modes) == 1, name='nema_mode')
+                for mode, ring_order in config['phase_sequence'].items():
+                    for ring in range(2):
+                        # Start phase
+                        start_lane_group_id = '_'.join((signal_id, str(ring_order[ring][0])))
+                        start_movement_id = signal.lane_groups[start_lane_group_id].get_main_movement_id()
+                        m.addConstr(M * (1 - nema_mode[mode]) >= movement_green_start[start_movement_id],
+                                    name=constr_name_attach(signal_id, mode, 'ring' + str(ring), 'start', '1'))
+                        m.addConstr(-M * (1 - nema_mode[mode]) <= movement_green_start[start_movement_id],
+                                    name=constr_name_attach(signal_id, mode, 'ring' + str(ring), 'start', '2'))
+                        # Middle phase
+                        for phase in range(3):
+                            pred_lane_group_id = '_'.join((signal_id, str(ring_order[ring][phase])))
+                            pred_movement_id = signal.lane_groups[pred_lane_group_id].get_main_movement_id()
+                            succ_lane_group_id = '_'.join((signal_id, str(ring_order[ring][phase + 1])))
+                            succ_movement_id = signal.lane_groups[succ_lane_group_id].get_main_movement_id()
+                            m.addConstr(M * (1 - nema_mode[mode]) >= movement_green_start[pred_movement_id] + movement_green_dur[pred_movement_id] + yellow - movement_green_start[succ_movement_id],
+                                        name=constr_name_attach(signal_id, mode, 'ring' + str(ring), 'phase' + str(phase), '1'))
+                            m.addConstr(-M * (1 - nema_mode[mode]) <= movement_green_start[pred_movement_id] + movement_green_dur[pred_movement_id] + yellow - movement_green_start[succ_movement_id],
+                                        name=constr_name_attach(signal_id, mode, 'ring' + str(ring), 'phase' + str(phase), '2'))
+                        # End phase
+                        end_lane_group_id = '_'.join((signal_id, str(ring_order[ring][3])))
+                        end_movement_id = signal.lane_groups[end_lane_group_id].get_main_movement_id()
+                        m.addConstr(M * (1 - nema_mode[mode]) >= movement_green_start[end_movement_id] + movement_green_dur[end_movement_id] + yellow - signal.cycle,
+                                    name=constr_name_attach(signal_id, mode, 'ring' + str(ring), 'end', '1'))
+                        m.addConstr(-M * (1 - nema_mode[mode]) <= movement_green_start[end_movement_id] + movement_green_dur[end_movement_id] + yellow - signal.cycle,
+                                    name=constr_name_attach(signal_id, mode, 'ring' + str(ring), 'end', '2'))
+                        # Barrier
+                        ring1_barrier_lanegroup = '_'.join((signal_id, str(ring_order[0][2])))
+                        ring2_barrier_lanegroup = '_'.join((signal_id, str(ring_order[1][2])))
+                        ring1_barrier_movement = signal.lane_groups[ring1_barrier_lanegroup].get_main_movement_id()
+                        ring2_barrier_movement = signal.lane_groups[ring2_barrier_lanegroup].get_main_movement_id()
+                        m.addConstr(M * (1 - nema_mode[mode]) >= movement_green_start[ring1_barrier_movement] - movement_green_start[ring2_barrier_movement],
+                                    name=constr_name_attach(signal_id, mode, 'barrier', '1'))
+                        m.addConstr(-M * (1 - nema_mode[mode]) <= movement_green_start[ring1_barrier_movement] - movement_green_start[ring2_barrier_movement],
+                                    name=constr_name_attach(signal_id, mode, 'barrier', '2'))
+                # GridBuffer
+                # phase_order = self.peri_data.peri_info[signal_id]['nema_plan']
+                # barrier_movement = []  # 每个ring的第二个barrier的首个movement
+                # for ring_name, ring in phase_order.items():
+                #     for idx in range(0, len(ring) - 1):
+                #         pred_movement, succ_movement = ring[idx], ring[idx + 1]
+                #         # 4.1.1 start and end of the cycle
+                #         if idx == 0:
+                #             m.addConstr(movement_green_start[pred_movement] == 0,
+                #                         name=constr_name_attach(ring_name, 'start'))
+                #         elif idx == len(ring) - 2:
+                #             m.addConstr(movement_green_start[succ_movement] + movement_green_dur[
+                #                 succ_movement] + yellow == signal.cycle,
+                #                         name=constr_name_attach(ring_name, 'end'))
+                #         # 4.1.2 normal phase order
+                #         if pred_movement == '':
+                #             barrier_movement.append(succ_movement)
+                #             continue
+                #         if succ_movement == '':
+                #             succ_movement = ring[idx + 2]
+                #         m.addConstr(movement_green_start[pred_movement] + movement_green_dur[
+                #             pred_movement] + yellow == movement_green_start[succ_movement],
+                #                     name=constr_name_attach(ring_name, str(idx)))
+                # # 4.1.3 barrier time
+                # ring1_second_barrier_movement, ring2_second_barrier_movement = barrier_movement
+                # m.addConstr(movement_green_start[ring1_second_barrier_movement] == movement_green_start[
+                #             ring2_second_barrier_movement], name='barrier')
             # Constraint 4.2: Phase order for unfixed structure
             elif self.signal_phase_mode == 'Unfixed':
                 conflict_matrix = signal.conflict_matrix
@@ -589,7 +619,7 @@ class PeriSignalController:
                 for lane_group in signal.lane_groups.values():
                     lane_group.green_start = next(iter(lane_group.movements.values())).green_start
                     lane_group.green_duration = next(iter(lane_group.movements.values())).green_duration
-                    print(f'The inflow green at signal {signal_id} is {lane_group.green_duration[0]}. ')
+                    # print(f'The inflow green at signal {signal_id} is {lane_group.green_duration[0]}. ')
                 for connection in signal.connections.values():
                     connection.update_timing()
             elif m.status == gp.GRB.INFEASIBLE:
