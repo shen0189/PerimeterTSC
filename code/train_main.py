@@ -20,6 +20,7 @@ from time import time
 import random
 from copy import copy
 from utils.genDemandBuffer import TrafficGenerator
+from utils.genDemandFromTurn import TrafficGeneratorFromTurn
 # from memory import Memory
 # from dqn_agent import DQNAgent
 from envir.envir import Simulator
@@ -81,7 +82,10 @@ def simulate_one_episode_train(e, config, netdata, accu_crit = None):
     if accu_crit:
         agent_upper.accu_crit = accu_crit
     # env = Env
-    trafficGen = TrafficGenerator()
+    if config['network'] == 'FullGrid':
+        trafficGen = TrafficGeneratorFromTurn()
+    else:
+        trafficGen = TrafficGenerator()
     if n_jobs>0:
         route_file_name = trafficGen.route_file_name.split('/')
         route_file_name[1] += str(e % n_jobs + 1)
@@ -438,15 +442,25 @@ sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_step
 # print(sumo_cmd)
 
 ## 2. initialize demand generator & netdata
-TrafficGen = TrafficGenerator()
-TrafficGen.gen_demand(config)     # 当路网结构发生变化时用于初始化更新rou.xml文件
-
 nd = NetworkData(config['netfile_dir'], sumo_cmd)
 netdata = nd.get_net_data()
 tsc, tsc_peri = nd.update_netdata()
 
+if config['network'] == 'Grid':
+    TrafficGen = TrafficGenerator()
+    TrafficGen.gen_demand(config)
+elif config['network'] == 'FullGrid':
+    TrafficGen = TrafficGeneratorFromTurn()
+    # 1. 生成转向概率及需求
+    TrafficGen.generate_turn_probability(config, netdata)
+    TrafficGen.generate_flow(config)
+    # 2. 写入文件
+    TrafficGen.generate_turn_file(config)
+    TrafficGen.generate_flow_file(config)
+    TrafficGen.generate_trip_file(config)
+
 # initialize perimeter signals
-peridata = PeriSignals(config['netfile_dir'], sumo_cmd)
+peridata = PeriSignals(config['netfile_dir'], nd, sumo_cmd)
 peridata.get_basic_inform()
 peridata.get_conflict_matrix()
 # peridata.check_conflict_matrix()
