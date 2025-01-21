@@ -6,7 +6,8 @@ import timeit
 from time import time
 from utils.result_processing import plot_MFD, plot_accu, plot_actions, plot_flow_MFD, plot_flow_progression, \
     plot_phase_mean_time, plot_tsc_delay, plot_peri_waiting, plot_controlled_tls_delay_epis, \
-    plot_peri_queue_progression, plot_feature_progression, save_stats, plot_ordered_real_action
+    plot_peri_queue_progression, plot_feature_progression, save_stats, plot_ordered_real_action, \
+    plot_link_status
 import traci
 
 
@@ -84,7 +85,7 @@ class Trainer():
         self.print_result(upper_metric, lower_metric)
 
         ## 4.5 plot
-        self.plot(accu_epis=upper_metric['accu'], flow_epis=upper_metric['flow'],
+        self.plot(accu_epis=lower_metric['accu'], flow_epis=lower_metric['flow'],
                   cumul_obj_upper=upper_metric['cul_reward'][0],
                   cumul_reward_lower=lower_metric['tsc_perveh_delay_mean'],
                   peri_entered_vehs=upper_metric['peri_entered_vehs'],
@@ -98,7 +99,9 @@ class Trainer():
                   tsc_metrics=lower_metric['tsc_metrics'],
                   peri_ordered_flow=upper_metric['ordered_inflow'],
                   peri_estimate_inflow=upper_metric['estimated_inflow'],
-                  travel_time=lower_metric['avg_travel_time'])
+                  travel_time=lower_metric['avg_travel_time'],
+                  link_density=upper_metric['PN_link_density'],
+                  netdata=self.agent_upper.netdata)
 
         ## 4.6 save
         self.save(peri_queue=lower_metric['peri_queue'],
@@ -282,6 +285,9 @@ class Trainer():
         ## output for entered vehicles
         # self.agent_upper.metric.process_output(self.agent_upper.outputfile)
 
+        ## check the lower lane data
+        self.agent_upper.metric.process_lane_xml(self.agent_lower.outputfile)
+
         ## output for csv
         self.agent_upper.metric.xml2csv(self.agent_upper.outputfile)  ## edge
         self.agent_upper.metric.xml2csv(self.agent_lower.outputfile)  ## lane
@@ -340,7 +346,8 @@ class Trainer():
 
     def plot(self, accu_epis, flow_epis, cumul_obj_upper, cumul_reward_lower, peri_entered_vehs, peri_ordered_flow,
              peri_waiting_tot, peri_waiting_mean, peri_spillover, peri_queue, peri_throughput, peri_delay,
-             peri_estimate_inflow, tsc_delay_step, tsc_perveh_delay_step, tsc_metrics, travel_time):
+             peri_estimate_inflow, tsc_delay_step, tsc_perveh_delay_step, tsc_metrics, travel_time, link_density,
+             netdata):
         ''' plot after one episode
         '''
         ## upper actions
@@ -356,6 +363,9 @@ class Trainer():
         ## MFD
         plot_MFD(self.config, accu_epis, flow_epis, self.cycle_time, \
                  self.cur_epis, cumul_obj_upper, self.n_jobs, cumul_reward_lower)
+
+        ## link density
+        plot_link_status(self.config, netdata, link_density, self.cur_epis, self.n_jobs)
 
         ## plot flow
         # plot_flow_progression(self.config, flow_epis, self.cur_epis , self.n_jobs)
@@ -385,6 +395,7 @@ class Trainer():
 
         ''' each perimeter inflow queue length'''
         max_lane_length = max([lanegroup.length for lanegroup in self.agent_lower.peridata.peri_lane_groups.values()])
+        # TODO: FullGrid场景下debug
         plot_peri_queue_progression(self.config, peri_queue, max_lane_length, self.cur_epis, self.n_jobs)
 
         ''' aggregated perimeter performance '''
@@ -396,7 +407,6 @@ class Trainer():
                                       'peri_delay', 'delay (s)')
 
         ''' vehicle travel time '''
-        # TODO: travel_time是字典，修改该函数使其适配字典类型数据（在一张图上同时绘制多条线）
         plot_feature_progression(self.config, travel_time, self.cur_epis, self.n_jobs,
                                       'travel_time', 'time (s)')
 
