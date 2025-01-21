@@ -27,9 +27,10 @@ class Metric():
         self.info_length = int(control_interval/info_interval) + 1
         self.netdata = netdata
         self.peridata: PeriSignals = peridata
-        self.peri_controlled_links = [peri['edge'] for peri in config['Peri_info'].values()]
-        self.peri_outflow_links = [peri['external_out_edges'] for peri in config['Peri_info'].values()]
-        self.peri_outflow_links = sum(self.peri_outflow_links, [])
+        self.peri_controlled_links = sum([peri['gated_edge'] for peri in config['Peri_info'].values()], [])
+        # self.peri_outflow_links = [peri['external_out_edges'] for peri in config['Peri_info'].values()]
+        # self.peri_outflow_links = sum(self.peri_outflow_links, [])
+        self.peri_outflow_links = config['Edge_PN_out']
         self.sumo_tools_path = tools
 
         self.edge_buffer = self._get_buffer_edges()
@@ -284,6 +285,17 @@ class Metric():
         # print(cmd)
         os.system(cmd)
 
+    def process_lane_xml(self, file):
+        '''
+        delete the record with sampledSeconds=0 for lane data
+        '''
+        root = ET.parse(file).getroot()
+        for interval in root.findall('interval'):
+            for edge in interval.findall('edge'):
+                if edge.get('sampledSeconds') == '0.00':
+                    interval.remove(edge)
+        ET.ElementTree(root).write(file)
+
     def process_edge_output(self, file):
         ## set file name as csv
         file=file.split('.')
@@ -317,6 +329,7 @@ class Metric():
 
         ## density
         edge_density = df_PN.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_density']].set_index('edge_id').T)
+        edge_data['link_density'] = edge_density
         edge_data['density'] = edge_density.to_numpy()
         
         ## speed
@@ -372,7 +385,8 @@ class Metric():
         ## 1.read csv
         # df = pd.read_csv(file, sep=';')
         df = pd.read_csv(file, sep=';', usecols=\
-            ['edge_id','interval_begin','edge_waitingTime', 'edge_left', 'edge_sampledSeconds'])
+            ['edge_id','interval_begin','edge_waitingTime', 'edge_left', 'edge_sampledSeconds',
+             'edge_speed', 'edge_density'])
         df = df.dropna(subset=['edge_id'])
         df['edge_id'] = df['edge_id'].astype(int).astype(str)
 
@@ -381,6 +395,7 @@ class Metric():
         # df['lane_queueing_time'].fillna(0, inplace=True)
         df_complete = pd.DataFrame(product(np.arange(0, config['max_steps'], 5, dtype=float), self.netdata['edge'].keys()), columns=['interval_begin', 'edge_id'])
         df = df_complete.merge(df, on=['interval_begin', 'edge_id'], how='left').fillna(1e-5)
+        df_PN = df[df['edge_id'].astype(int).isin(config['Edge_PN'])]
 
         ## 3. process data
         lane_data = {}
@@ -397,6 +412,19 @@ class Metric():
 
         lane_data['network_perveh_delay_step'] = agg_df['step_waiting_time'].to_numpy()
         lane_data['network_perveh_delay_mean'] = agg_df['edge_waitingTime'].sum() /agg_df['edge_sampledSeconds'].sum() # per second
+
+        ''' 1.3 PN data (aggregated in 5 secs) '''
+        edge_sampledSeconds = df_PN.groupby('interval_begin').apply(
+            lambda x: x[['edge_id', 'edge_sampledSeconds']].set_index('edge_id').T)
+        lane_data['sampledSeconds'] = edge_sampledSeconds.to_numpy()
+
+        edge_density = df_PN.groupby('interval_begin').apply(
+            lambda x: x[['edge_id', 'edge_density']].set_index('edge_id').T)
+        lane_data['density'] = edge_density.to_numpy()
+
+        edge_speed = df_PN.groupby('interval_begin').apply(
+            lambda x: x[['edge_id', 'edge_speed']].set_index('edge_id').T)
+        lane_data['speed'] = edge_speed.to_numpy()
 
         ''' 2.1 Node delay for each step'''
         df['ToNode'] = df['edge_id'].apply(lambda x: self.netdata['edge'][x]['incnode']) # add attribute of ToNode
@@ -530,12 +558,18 @@ class Metric():
 
 
 def get_trip_type(edge):
-    if edge['depart_edge'] in config['Edge_Peri']:
-        return 'out-in'
-    elif edge['arrival_edge'] in config['Edge_Peri']:
-        return 'in-out'
-    else:
-        return 'in-in'
+    if config['network'] == 'FullGrid':
+        if edge['depart_edge'] in config['Edge_Peri']:
+            return 'out-out'
+        else:
+            return 'in-in'
+    if config['network'] == 'Grid':
+        if edge['depart_edge'] in config['Edge_Peri']:
+            return 'out-in'
+        elif edge['arrival_edge'] in config['Edge_Peri']:
+            return 'in-out'
+        else:
+            return 'in-in'
 
 
 if False:
