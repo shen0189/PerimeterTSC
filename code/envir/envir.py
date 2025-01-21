@@ -6,6 +6,8 @@ from peritsc.perimeterdata import PeriSignals
 from utils.utilize import config
 from utils.result_processing import plot_MFD
 import numpy as np
+from utils.genDemandBuffer import TrafficGenerator
+from utils.genDemandFromTurn import TrafficGeneratorFromTurn
 from envir.perimeter import Peri_Agent
 import xml.etree.cElementTree as ET
 import matplotlib.pyplot as plt
@@ -14,7 +16,7 @@ from metric.metric import Metric
 import datetime
 import platform
 import time
-from typing import Dict
+from typing import Dict, Union
 from copy import deepcopy
 
 class Simulator():
@@ -24,7 +26,7 @@ class Simulator():
         # self.states = config['states']
         self.yellow_duration = config['yellow_duration']
         self.max_steps = config['max_steps']
-        self.TrafficGen = TrafficGen
+        self.TrafficGen: Union[TrafficGenerator, TrafficGeneratorFromTurn] = TrafficGen
         self.state_steps = config['state_steps']
         self.netdata = netdata
         self.peridata: PeriSignals = peridata
@@ -57,7 +59,12 @@ class Simulator():
         # self.info_update_index = 0
 
         ## 1. reset demand
-        self.TrafficGen.gen_demand(config)
+        if config['network'] == 'FullGrid':
+            self.TrafficGen.generate_flow(config)
+            self.TrafficGen.generate_flow_file(config)
+            self.TrafficGen.generate_trip_file(config)
+        else:
+            self.TrafficGen.gen_demand(config)
 
 
         ## 2. start sumo
@@ -167,7 +174,8 @@ class Simulator():
                     for vehicle_id in vehicles:
                         # 维护车道排队车辆
                         speed = traci.vehicle.getSpeed(vehicle_id)
-                        if speed < 0.1:
+                        pos = traci.vehicle.getDistance(vehicle_id)
+                        if speed < 0.1 and pos > 5:     # pos用于排除刚加入路网的车辆
                             # 第一次停车时加入车道队列
                             if vehicle_id not in lane.queueing_vehicles:
                                 lane.queueing_vehicles.append(vehicle_id)
