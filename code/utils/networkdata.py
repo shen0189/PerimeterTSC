@@ -224,16 +224,16 @@ class NetworkData:
                 t_value.logic = logic
                 
 
-                # get phase
-                for idx, signal in enumerate(logic.phases):
-                    if  config['Peri_info'][t_id]['phase_info'][idx] =='control_phase':
-                    # if 'y' not in signal.state and 'r' not in signal.state: 
-                        t_value.green_phase = signal.state
-                        t_value.green_phase_index = idx
-                    
-                    elif config['Peri_info'][t_id]['phase_info'][idx] =='':
-                        t_value.red_phase = signal.state
-                        t_value.red_phase_index = idx
+                # # get phase
+                # for idx, signal in enumerate(logic.phases):
+                #     if  config['Peri_info'][t_id]['phase_info'][idx] =='control_phase':
+                #     # if 'y' not in signal.state and 'r' not in signal.state:
+                #         t_value.green_phase = signal.state
+                #         t_value.green_phase_index = idx
+                #
+                #     elif config['Peri_info'][t_id]['phase_info'][idx] =='':
+                #         t_value.red_phase = signal.state
+                #         t_value.red_phase_index = idx
         return tsc_peri
 
 
