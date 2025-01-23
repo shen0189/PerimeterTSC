@@ -5,3 +5,8 @@ measurements
 *.rou.xml
 output
 code/utils/utilize.py
+code/scripts
+*.trips.xml
+*.flows.xml
+infeasible.ilp
+*.__init__.py
