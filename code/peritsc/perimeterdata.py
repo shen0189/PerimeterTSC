@@ -5,6 +5,7 @@ import xml.etree.cElementTree as ET
 import numpy as np
 import copy
 from typing import Dict, List, Union, Tuple
+from utils.networkdata import NetworkData
 
 
 class DownstreamLink:
@@ -155,8 +156,9 @@ class LaneGroup:
     """
 
     def __init__(self, group_id: str, tls_id: str):
-        self.id = group_id      # 暂定与edge_id相同
+        self.id = group_id
         self.signal = tls_id
+        self.type = None    # inflow / outflow / normal flow
         self.movements: Dict[str, Movement] = {}
         self.lanes: Dict[str, Lane] = {}
 
@@ -182,6 +184,13 @@ class LaneGroup:
         self.min_inflow = 0
         self.max_inflow = 0
         self.yellow_duration = 0
+
+    def get_main_movement_id(self):
+        if len(self.movements) == 1:
+            return next(iter(self.movements))
+        else:
+            assert len(self.movements) == 2
+            return next(k for k in self.movements if k[-1] == 's')
 
     def get_downstream_capacity(self):
         min_cap_movement, capacity = '', 1e7
@@ -281,13 +290,14 @@ class Intersection:
 
 class PeriSignals:
 
-    def __init__(self, net_fp, sumo_cmd):
+    def __init__(self, net_fp: str, netdata: NetworkData, sumo_cmd):
         self.peri_info = config['Peri_info']
+        self.netdata: NetworkData = netdata
         self.peri_signals: Dict[str, Intersection] = {tls: Intersection(tls) for tls in self.peri_info}
         self.peri_nodes: List[str] = [tls['node'] for tls in self.peri_info.values()]
         self.peri_inflows: Dict[str, Movement] = {}     # 仅受控方向
         self.peri_edges: Dict[str, LaneGroup] = {}      # 仅受控方向, lanegroup -> edge
-        self.peri_lane_groups: Dict[str, LaneGroup] = {}     # 暂时仅受控方向
+        self.peri_lane_groups: Dict[str, LaneGroup] = {}     # 仅受控方向
         self.peri_inflow_lanes_by_laneID: Dict[str, Lane] = {}      # 仅受控方向
         self.peri_inflow_lanes: List[tuple] = []    # 仅受控方向
         self.peri_downstream_links: Dict[str, DownstreamLink] = {}
@@ -324,14 +334,22 @@ class PeriSignals:
                     new_lane.add_direction(connection_dir)
                     peri_signal.add_lane(new_lane)
                     # Add movements
-                    if int(from_edge) in self.peri_info[tls_id]['external_in_edges'] and int(to_edge) in \
-                            self.peri_info[tls_id]['internal_out_edges']:
-                        movement_type = 'inflow'
-                    elif int(from_edge) in self.peri_info[tls_id]['internal_in_edges'] and int(to_edge) in \
-                            self.peri_info[tls_id]['external_out_edges']:
-                        movement_type = 'outflow'
+                    if config['network'] == 'FullGrid':
+                        if int(from_edge) > 100 and int(to_edge) < 100:
+                            movement_type = 'inflow'
+                        elif int(from_edge) < 100 and int(to_edge) > 100:
+                            movement_type = 'outflow'
+                        else:
+                            movement_type = 'normal flow'
                     else:
-                        movement_type = 'normal flow'
+                        if int(from_edge) in self.peri_info[tls_id]['external_in_edges'] and int(to_edge) in \
+                                self.peri_info[tls_id]['internal_out_edges']:
+                            movement_type = 'inflow'
+                        elif int(from_edge) in self.peri_info[tls_id]['internal_in_edges'] and int(to_edge) in \
+                                self.peri_info[tls_id]['external_out_edges']:
+                            movement_type = 'outflow'
+                        else:
+                            movement_type = 'normal flow'
                     new_movement = Movement(from_edge, connection_dir, movement_type, tls_id)
                     peri_signal.add_movement(new_movement)
                     # Add connections
@@ -409,23 +427,70 @@ class PeriSignals:
                 connection.yellow_duration = config['yellow_duration']
 
         # Add lane-group definitions for inflow edges after the basic elements determined (new)
+        # For each peri signal, 8 lane groups under NEMA structure are defined
+        # Index naming rules: refer to SPDL (Ma et al., 2022) Fig. 3
+        # N-S through: odd edge id with lane 0 and 1; N-S left: odd edge id with lane 2
+        # For P11, P21, P31, P41, P51, index of northbound edge > southbound edge
+        # E-W through: even edge id with lane 0 and 1; E-W left: even edge id with lane 2
+        # For P11, P12, P13, P14, P15, index of eastbound edge > westbound edge
         for tls_id, tls_info in config['Peri_info'].items():
-            inflow_edge_id = str(tls_info['edge'])
-            lane_group_list = tls_info['inflow_lane_groups']
-            current_lane_index = 0      # 当前要加入车道组的车道
-            for group_id, lane_num in enumerate(lane_group_list):
-                group_id = '_'.join((inflow_edge_id, str(group_id)))
+            node_id = tls_info['node']
+            in_edges = self.netdata.node_data[node_id]['incoming']
+            edge_ns = [int(e) for e in in_edges if int(e) % 2 == 1]
+            edge_ew = [int(e) for e in in_edges if int(e) % 2 == 0]
+            if node_id in ['P11', 'P12', 'P13', 'P14']:
+                edge_info = {'south': max(edge_ns), 'north': min(edge_ns), 'west': max(edge_ew), 'east': min(edge_ew)}
+            elif node_id in ['P25', 'P35', 'P45', 'P55']:
+                edge_info = {'south': min(edge_ns), 'north': max(edge_ns), 'west': min(edge_ew), 'east': max(edge_ew)}
+            elif node_id == 'P15':
+                edge_info = {'south': min(edge_ns), 'north': max(edge_ns), 'west': max(edge_ew), 'east': min(edge_ew)}
+            else:
+                edge_info = {'south': max(edge_ns), 'north': min(edge_ns), 'west': min(edge_ew), 'east': max(edge_ew)}
+            # Add each lane group
+            for idx, (in_edge_loc, move_dir) in config['lane_group_info'].items():
+                group_id = '_'.join((tls_id, str(idx)))
                 new_lane_group = LaneGroup(group_id=group_id, tls_id=tls_id)
-                # Add lanes and movements
-                for i in range(lane_num):
-                    lane_id = '_'.join((inflow_edge_id, str(current_lane_index + i)))
+                if move_dir == 'l':
+                    lane_id = '_'.join((str(edge_info[in_edge_loc]), '2'))
                     lane = self.peri_signals[tls_id].in_lanes[lane_id]
                     new_lane_group.lanes[lane_id] = lane
                     for movement_id, movement in lane.movements.items():
                         if movement_id not in new_lane_group.movements:
                             new_lane_group.movements[movement_id] = movement
-                current_lane_index += lane_num
-                # Add parameters
+                            if new_lane_group.type is None:
+                                new_lane_group.type = movement.type
+                elif move_dir == 's':
+                    for idx in range(2):
+                        lane_id = '_'.join((str(edge_info[in_edge_loc]), str(idx)))
+                        lane = self.peri_signals[tls_id].in_lanes[lane_id]
+                        new_lane_group.lanes[lane_id] = lane
+                        for movement_id, movement in lane.movements.items():
+                            if movement_id not in new_lane_group.movements:
+                                new_lane_group.movements[movement_id] = movement
+                                if new_lane_group.type is None:
+                                    new_lane_group.type = movement.type
+                                else:   # 直行+右转车道组, 取直行车道组的类型
+                                    if movement.dir == 's':
+                                        new_lane_group.type = movement.type
+
+            # # for GridBuffer network
+            # inflow_edge_id = str(tls_info['edge'])
+            # lane_group_list = tls_info['inflow_lane_groups']
+            # current_lane_index = 0      # 当前要加入车道组的车道
+            # for group_id, lane_num in enumerate(lane_group_list):
+            #     group_id = '_'.join((inflow_edge_id, str(group_id)))
+            #     new_lane_group = LaneGroup(group_id=group_id, tls_id=tls_id)
+            #     # Add lanes and movements
+            #     for i in range(lane_num):
+            #         lane_id = '_'.join((inflow_edge_id, str(current_lane_index + i)))
+            #         lane = self.peri_signals[tls_id].in_lanes[lane_id]
+            #         new_lane_group.lanes[lane_id] = lane
+            #         for movement_id, movement in lane.movements.items():
+            #             if movement_id not in new_lane_group.movements:
+            #                 new_lane_group.movements[movement_id] = movement
+            #     current_lane_index += lane_num
+
+                # Add parameters for the lane group
                 new_lane_group.length = np.mean([lane.length for lane in new_lane_group.lanes.values()])
                 new_lane_group.total_capacity = sum([lane.capacity for lane in new_lane_group.lanes.values()])
                 new_lane_group.saturation_flow_rate = sum(
@@ -443,9 +508,16 @@ class PeriSignals:
                 new_lane_group.critical_queue_vehicle = new_lane_group.total_capacity * config['spillover_critical_ratio']
                 # new_lane_group.queue_pressure_coef = 1 / (
                 #             2 * new_lane_group.total_capacity * config['spillover_critical_ratio'])
-                self.peri_lane_groups[group_id] = new_lane_group
                 self.peri_signals[tls_id].add_lane_group(new_lane_group)
+                if new_lane_group.type == 'inflow':
+                    self.peri_lane_groups[group_id] = new_lane_group
 
+        # Update perimeter info for config file
+        config['perimeter_lane_number'] = sum([len(lane_group.lanes) for lane_group in self.peri_lane_groups.values()])
+        config['network_maximal_inflow'] = config['saturation_flow_rate'] * config['max_green'] / config['cycle_time'] * \
+                                           config['perimeter_lane_number']
+        config['network_minimal_inflow'] = config['saturation_flow_rate'] * config['min_green'] / config['cycle_time'] * \
+                                           config['perimeter_lane_number']
 
     def get_all_lanes(self):
         peri_lanes = []
