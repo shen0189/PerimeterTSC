@@ -52,7 +52,7 @@ class TrafficGeneratorFromTurn:
         """
         Generate turn.xml file given the turn probability and sink edges
         """
-        sink_edges = config['Edge_PN_out']
+        sink_edges = config['Edge_Peri_out']
         turn_filename = config['turnfile_dir']
         with open(turn_filename, "w") as turns:
             print('<turns>\n\t<edgeRelations>', file=turns)
@@ -89,7 +89,7 @@ class TrafficGeneratorFromTurn:
                     end_time += interval
                     for edge in self.edge_flow_for_each_type[i]:
                         flow = self.edge_flow_for_each_type[i][edge][interval_cnt]
-                        print(f'\t<flow id="F{edge}_{interval_cnt}" from="{edge}" begin="{begin_time}" end="{end_time}" vehsPerHour="{flow}"/>', file=flow_file)
+                        print(f'\t<flow id="F{edge}_{i}_{interval_cnt}" from="{edge}" begin="{begin_time}" end="{end_time}" vehsPerHour="{flow}"/>', file=flow_file)
                     begin_time = end_time
                 print('</routes>', file=flow_file)
 
@@ -104,8 +104,9 @@ class TrafficGeneratorFromTurn:
             None
         """
 
-        for i in range(len(config['DemandConfig'])):
-
+        for i, DemandType in enumerate(config['DemandConfig']):
+            sink_edges = config[config['SinkEdgeConfig'][DemandType['TurnType']]]
+            sink_edges_str = ','.join([str(edge) for edge in sink_edges])
             p = subprocess.run(
                 [
                     "jtrrouter",
@@ -125,7 +126,11 @@ class TrafficGeneratorFromTurn:
                     "--accept-all-destinations",
                     # disable console output
                     "--no-step-log",
-                ]
+                    "--sinks",
+                    sink_edges_str,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
 
             ret_code = p.returncode
@@ -164,7 +169,10 @@ def flow_allocation(total_flow: int, edge_list: list, scale: float = 1.):
     """
     np.random.seed(47)
     while True:
-        random_value = np.random.normal(0, scale, len(edge_list))
+        if config['demand_mode'] == 'MFD':
+            random_value = np.zeros(len(edge_list))  # 无随机性
+        else:
+            random_value = np.random.normal(0, scale, len(edge_list))
         split_ratio = [1 / len(edge_list) + r for r in random_value]
         if all([r >= 0 for r in split_ratio]):
             break
