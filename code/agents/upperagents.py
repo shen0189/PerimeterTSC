@@ -56,7 +56,7 @@ class UpperAgents:
         self.max_green = config['max_green']
 
         # states
-        if self.peri_mode == 'Static':  # Static' # 'DDPG' #'DQN' # 'Expert''
+        if self.peri_mode in ['Static', 'Webster']:  # Static' # 'DDPG' #'DQN' # 'Expert''
             self.states = []
         elif self.peri_mode == 'Expert':
             self.states = ['accu', 'accu_buffer', 'future_demand']
@@ -186,6 +186,11 @@ class UpperAgents:
             self.action_type = 'Static'
             return
 
+        # For webster
+        if self.peri_mode == 'Webster':
+            self.action_type = 'Webster'
+            return
+
         # For Maxpressure
         if self.peri_mode == 'MaxPressure':
             self.action_type = 'MaxPressure'
@@ -240,6 +245,12 @@ class UpperAgents:
                 self.perimeter.switch_to_normal_plan = True
             return
 
+        # determine the signal program of each peri-signal for Webster controller
+        if self.peri_mode == 'Webster':
+            self.perimeter.get_full_greensplit(peri_mode=self.peri_mode)
+            self.perimeter.set_full_program()
+            return
+
         # 1. get action
         self.a, is_expert = self.get_action_all(self.old_state)
 
@@ -251,7 +262,7 @@ class UpperAgents:
         self.ordered_action.append(a)
 
         # 3. assign the vehicle to each perimeter and obtain the phase duration
-        estimate_inflow = self.perimeter.get_full_greensplit(a)
+        estimate_inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a)
         self.estimated_inflow.append(estimate_inflow)
 
         # 4. set program
@@ -551,10 +562,12 @@ class UpperAgents:
         density_PN = edge_data['density']/300
         mean_density = np.mean(density_PN, axis=1)
         mean_density = np.expand_dims(mean_density, axis=1)
-
         # density rmse
         metric['density_heter_PN'] = np.sqrt(
             np.mean((density_PN-mean_density)**2, axis=1))
+
+        ''' PN density on each link '''
+        metric['PN_link_density'] = edge_data['link_density']
 
         ''' PN+buffer density heterogenity'''
         # density_PN_buffer = np.hstack([edge_data['density'], edge_data['buffer_density']])
