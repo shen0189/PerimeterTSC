@@ -72,7 +72,8 @@ class NetworkData:
     ### helper functions: read the network
     def _get_edge_data(self, net):
         edges = net.getEdges()
-        edge_data = {str(edge.getID()):{} for edge in edges} 
+        edge_data = {str(edge.getID()):{} for edge in edges}
+        PN_length = 0
 
         for edge in edges:
             edge_ID = str(edge.getID())
@@ -91,6 +92,11 @@ class NetworkData:
             outnode_coord = edge.getToNode().getCoord()
             edge_data[edge_ID]['coord'] = np.array([incnode_coord[0], incnode_coord[1], outnode_coord[0], outnode_coord[1]]).reshape(2,2)
             #print edge_data[edge_ID]['coord']
+
+            if int(edge_ID) in config['Edge_PN']:
+                PN_length += edge_data[edge_ID]['length'] * edge_data[edge_ID]['nlanes'] / 1000
+        config['PN_total_length'] = PN_length
+
         return edge_data 
 
     def _get_lane_data(self, net, edge_data):
@@ -220,7 +226,7 @@ class NetworkData:
                 config['Peri_info'][t_id]['tsc'] = t_value
 
                 # get program
-                logic = traci.trafficlight.getCompleteRedYellowGreenDefinition(t_id)[0]
+                logic = traci.trafficlight.getAllProgramLogics(t_id)[0]
                 t_value.logic = logic
                 
 
