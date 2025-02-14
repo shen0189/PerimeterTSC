@@ -30,7 +30,7 @@ class Metric():
         self.peri_controlled_links = sum([peri['gated_edge'] for peri in config['Peri_info'].values()], [])
         # self.peri_outflow_links = [peri['external_out_edges'] for peri in config['Peri_info'].values()]
         # self.peri_outflow_links = sum(self.peri_outflow_links, [])
-        self.peri_outflow_links = config['Edge_PN_out']
+        self.peri_outflow_links = config['Edge_Peri_out']
         self.sumo_tools_path = tools
 
         self.edge_buffer = self._get_buffer_edges()
@@ -237,7 +237,7 @@ class Metric():
                 edge = int(child.attrib['id'])  # get the edge
 
                 # outflow of PN
-                if edge in config['Edge_PN_out']:
+                if edge in config['Edge_Peri_out']:
                     throuput += int(child.attrib['entered'])
 
                 # arrived flow within PN
@@ -393,7 +393,8 @@ class Metric():
         ## 2. fill na
         # df['lane_id'].fillna(-1, inplace=True)
         # df['lane_queueing_time'].fillna(0, inplace=True)
-        df_complete = pd.DataFrame(product(np.arange(0, config['max_steps'], 5, dtype=float), self.netdata['edge'].keys()), columns=['interval_begin', 'edge_id'])
+        df_complete = pd.DataFrame(product(np.arange(0, config['max_steps'], config['lower_agent_step'], dtype=float),
+                                           self.netdata['edge'].keys()), columns=['interval_begin', 'edge_id'])
         df = df_complete.merge(df, on=['interval_begin', 'edge_id'], how='left').fillna(1e-5)
         df_PN = df[df['edge_id'].astype(int).isin(config['Edge_PN'])]
 
@@ -420,6 +421,7 @@ class Metric():
 
         edge_density = df_PN.groupby('interval_begin').apply(
             lambda x: x[['edge_id', 'edge_density']].set_index('edge_id').T)
+        lane_data['link_density'] = edge_density
         lane_data['density'] = edge_density.to_numpy()
 
         edge_speed = df_PN.groupby('interval_begin').apply(
@@ -518,7 +520,7 @@ class Metric():
 
         df = pd.read_csv(file, sep=';', usecols=['tripinfo_depart', 'tripinfo_departLane', 'tripinfo_departDelay',
                                                  'tripinfo_arrival', 'tripinfo_arrivalLane', 'tripinfo_duration'])
-        df['arrival_interval'] = df['tripinfo_arrival'] // 20 * 20
+        df['arrival_interval'] = df['tripinfo_arrival'] // config['trip_complete_interval'] * config['trip_complete_interval']
         # 根据出发/到达车道区分trip类型
         df['depart_edge'] = df['tripinfo_departLane'].str.split('_').str[0].astype(int)
         df['arrival_edge'] = df['tripinfo_arrivalLane'].str.split('_').str[0].astype(int)
@@ -534,6 +536,9 @@ class Metric():
             vehicle_num=('tripinfo_arrival', 'count'),
             tripinfo_duration=('tripinfo_duration', 'sum')
         ).reset_index()
+        df_complete = pd.DataFrame(np.arange(0, config['max_steps'], config['trip_complete_interval'], dtype=float),
+                                   columns=['arrival_interval'])
+        df_all_types_travel_complete = df_complete.merge(df_all_types_travel, on=['arrival_interval'], how='left')
 
         # key值: 可以设置为demand类型
         trip_data = {'travel_time': {}, 'travel_veh_count': {}}
@@ -542,6 +547,7 @@ class Metric():
             trip_data['travel_veh_count'][trip_type] = list(df_travel[df_travel['trip_type'] == trip_type]['vehicle_num'])
         trip_data['travel_time']['total'] = list(df_all_types_travel['tripinfo_duration'])
         trip_data['travel_veh_count']['total'] = list(df_all_types_travel['vehicle_num'])
+        trip_data['completion'] = df_all_types_travel_complete['vehicle_num'].fillna(0).to_numpy()
 
         return trip_data
 
