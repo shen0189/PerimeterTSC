@@ -7,7 +7,7 @@ from time import time
 from utils.result_processing import plot_MFD, plot_accu, plot_actions, plot_flow_MFD, plot_flow_progression, \
     plot_phase_mean_time, plot_tsc_delay, plot_peri_waiting, plot_controlled_tls_delay_epis, \
     plot_peri_queue_progression, plot_feature_progression, save_stats, plot_ordered_real_action, \
-    plot_link_status
+    plot_link_status, plot_trip_MFD
 import traci
 
 
@@ -100,7 +100,8 @@ class Trainer():
                   peri_ordered_flow=upper_metric['ordered_inflow'],
                   peri_estimate_inflow=upper_metric['estimated_inflow'],
                   travel_time=lower_metric['avg_travel_time'],
-                  link_density=upper_metric['PN_link_density'],
+                  trip_completion=lower_metric['vehicle_completion'],
+                  link_density=lower_metric['PN_link_density'],
                   netdata=self.agent_upper.netdata)
 
         ## 4.6 save
@@ -346,8 +347,8 @@ class Trainer():
 
     def plot(self, accu_epis, flow_epis, cumul_obj_upper, cumul_reward_lower, peri_entered_vehs, peri_ordered_flow,
              peri_waiting_tot, peri_waiting_mean, peri_spillover, peri_queue, peri_throughput, peri_delay,
-             peri_estimate_inflow, tsc_delay_step, tsc_perveh_delay_step, tsc_metrics, travel_time, link_density,
-             netdata):
+             peri_estimate_inflow, tsc_delay_step, tsc_perveh_delay_step, tsc_metrics, travel_time, trip_completion,
+             link_density, netdata):
         ''' plot after one episode
         '''
         ## upper actions
@@ -357,12 +358,15 @@ class Trainer():
                          self.agent_upper.action_type, self.n_jobs, self.agent_upper.perimeter.inflow_movements)
 
         ''' ordered inflow and actual inflow '''
-        plot_ordered_real_action(self.config, peri_estimate_inflow, peri_entered_vehs,
-                                 self.cur_epis, self.n_jobs)
+        # plot_ordered_real_action(self.config, peri_estimate_inflow, peri_entered_vehs,
+        #                          self.cur_epis, self.n_jobs)
 
         ## MFD
         plot_MFD(self.config, accu_epis, flow_epis, self.cycle_time, \
                  self.cur_epis, cumul_obj_upper, self.n_jobs, cumul_reward_lower)
+
+        ## trip MFD
+        # plot_trip_MFD(self.config, accu_epis, trip_completion, self.cur_epis, self.n_jobs)
 
         ## link density
         plot_link_status(self.config, netdata, link_density, self.cur_epis, self.n_jobs)
