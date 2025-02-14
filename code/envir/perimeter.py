@@ -3,6 +3,7 @@ import numpy as np
 from utils.utilize import config
 from peritsc.perimeterdata import PeriSignals
 from peritsc.signal_controller import PeriSignalController, TimeSlotPeriSignalController
+from peritsc.webster_controller import WebsterController
 from typing import Dict
 
 # EdgeCross = [33034, 53054]
@@ -14,6 +15,9 @@ class Peri_Agent():
         self.distribution_mode = config['peri_control_mode']
         self.signal_phase_mode = config['peri_signal_phase_mode']
         self.optimization_mode = config['peri_optimization_mode']
+
+        # status for static mode
+        self.switch_to_normal_plan = False
 
         # signal constraints
         self.min_green = config['min_green']
@@ -114,11 +118,12 @@ class Peri_Agent():
         return green_time, red_time
         # print(f"action of greentime :{green_time}")
 
-    def get_full_greensplit(self, action):
+    def get_full_greensplit(self, peri_mode: str, action: float = 0.0):
         """
         distribute the vehicles on perimeter nodes with green split
 
         Args:
+        peri_mode (str):
         action (float): Aggregate metering rate of the network (veh/s)
 
         """
@@ -132,26 +137,32 @@ class Peri_Agent():
                 signal.downLinks[downlink_id].update_state(queue)
 
         # 2. Aggregate the parameters to each lane-group
-        for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
-            inflow_lanegroup.total_queue = sum([lane.queue for lane in inflow_lanegroup.lanes.values()])
-            inflow_lanegroup.arrival_rate = sum([lane.arrival_rate for lane in inflow_lanegroup.lanes.values()])
-            for lane_id, lane in inflow_lanegroup.lanes.items():    # 将同车道组的车道流量均分
-                lane.arrival_rate = inflow_lanegroup.arrival_rate / len(inflow_lanegroup.lanes)
+        # FullGrid
+        for signal_id, signal in self.peridata.peri_signals.items():
+            for lane_group_id, lane_group in signal.lane_groups.items():
+                lane_group.total_queue = sum([lane.queue for lane in lane_group.lanes.values()])
+                lane_group.arrival_rate = sum([lane.arrival_rate for lane in lane_group.lanes.values()])
+                for lane_id, lane in lane_group.lanes.items():
+                    lane.arrival_rate = lane_group.arrival_rate / len(lane_group.lanes)
 
-        # 3. Update the target state and the queue coefficient for each lane group
-        for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
-            inflow_lanegroup.update_target_state(self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
-        target_inflow_list = [lg.target_inflow for lg in self.peridata.peri_lane_groups.values()]
-        for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
-            inflow_lanegroup.update_queue_coef(control_mode=self.distribution_mode,
-                                               optimal_inflow=action, target_inflows=target_inflow_list,
-                                               cycle=self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
+        # 3. Update the target state and the queue coefficient for each lane group (for PI controller)
+        if peri_mode == 'PI':
+            for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
+                inflow_lanegroup.update_target_state(self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
+            target_inflow_list = [lg.target_inflow for lg in self.peridata.peri_lane_groups.values()]
+            for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
+                inflow_lanegroup.update_queue_coef(control_mode=self.distribution_mode,
+                                                   optimal_inflow=action, target_inflows=target_inflow_list,
+                                                   cycle=self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
 
         # 4. Optimize the signal plan of all perimeter intersections
-        if self.signal_phase_mode == 'Slot':
-            controller = TimeSlotPeriSignalController(self.peridata, action, self.slot_num)
+        if peri_mode == 'Webster':
+            controller = WebsterController(self.peridata)
         else:
-            controller = PeriSignalController(self.peridata, action)
+            if self.signal_phase_mode == 'Slot':
+                controller = TimeSlotPeriSignalController(self.peridata, action, self.slot_num)
+            else:
+                controller = PeriSignalController(self.peridata, action)
         estimate_inflow = controller.signal_optimize()
 
         # 5. record green time data
@@ -162,18 +173,18 @@ class Peri_Agent():
 
         return estimate_inflow
 
-    def set_program(self, green_time, red_time):
-        for peri_id, peri in dict.items(self.info):
-            tsc = peri['tsc']
-            logic = tsc.logic
-
-            ## set green and red time
-            logic.phases[tsc.green_phase_index].duration = green_time[peri_id]
-            logic.phases[tsc.red_phase_index].duration = red_time[peri_id]
-
-            ## set program
-            traci.trafficlight.setProgramLogic(peri_id, logic) # set the new program
-            # print(traci.trafficlight.getAllProgramLogics(peri_id))
+    # def set_program(self, green_time, red_time):
+    #     for peri_id, peri in dict.items(self.info):
+    #         tsc = peri['tsc']
+    #         logic = tsc.logic
+    #
+    #         ## set green and red time
+    #         logic.phases[tsc.green_phase_index].duration = green_time[peri_id]
+    #         logic.phases[tsc.red_phase_index].duration = red_time[peri_id]
+    #
+    #         ## set program
+    #         traci.trafficlight.setProgramLogic(peri_id, logic) # set the new program
+    #         # print(traci.trafficlight.getAllProgramLogics(peri_id))
 
     def set_full_program(self):
 
@@ -194,6 +205,19 @@ class Peri_Agent():
             # traci.trafficlight.setProgram(signal_id, logic.programID)
             traci.trafficlight.setPhase(signal_id, 0)
 
+    def set_normal_program_for_static(self):
+        """
+        For static upper mode, switch the signal plan to the normal program after the given step
+        """
+        for signal_id in self.peridata.peri_signals:
+            phases = []
+            for state, duration in config['normal_plan'].items():
+                phases.append(traci.trafficlight.Phase(duration, state))
+            tsc = self.info[signal_id]['tsc']
+            logic = tsc.logic
+            logic.phases = tuple(phases)
+            traci.trafficlight.setProgramLogic(signal_id, logic)
+            traci.trafficlight.setPhase(signal_id, 0)
 
     def switch_phase(self, steps):
         """ check signal to switch
