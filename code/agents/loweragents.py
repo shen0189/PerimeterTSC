@@ -373,7 +373,7 @@ class LowerAgents:
             2. individual node level (each tsc)
             3. controller node level (controlled nodes in the network)
         '''
-        step = 5
+        step = config['lower_agent_step']
         
         lower_metric = {}
 
@@ -389,16 +389,18 @@ class LowerAgents:
         ''' 1.4 network perveh delay mean over the simulation horizon (perveh delay per second) '''
         lower_metric['network_perveh_delay_mean'] = lane_data['network_perveh_delay_mean']
 
-        ''' 1.5 network accumulation '''
+        ''' 1.5 network accumulation and mean density '''
         accu_epis = np.sum(
             (lane_data['sampledSeconds'] / step), axis=1)
-        # accu_epis = self._fill_metric_values(accu_epis)
         lower_metric['accu'] = accu_epis
 
         ''' 1.6 network flow '''
         flow_epis = np.mean(
             lane_data['speed'] * lane_data['density'] * 3.6, axis=1)  # veh/h
         lower_metric['flow'] = flow_epis
+
+        ''' 1.7 PN link density '''
+        lower_metric['PN_link_density'] = lane_data['link_density']
 
         ''' 2. individual controlled tsc level'''
         ## init dict for tsc metrics
@@ -491,6 +493,9 @@ class LowerAgents:
             avg_travel_time_record[trip_type] = avg_travel_time_progession
         lower_metric['total_travel_time'] = total_travel_time_record
         lower_metric['avg_travel_time'] = avg_travel_time_record
+
+        ''' 5.2 vehicle completion rate '''
+        lower_metric['vehicle_completion'] = trip_data['completion']
 
         return lower_metric
 
@@ -761,7 +766,7 @@ class MaxPressure(LowerAgents):
         return np.array(batch_state)
 
     def _get_phase_value(self, state):
-        ''' get phase value through OAM network 
+        ''' get phase value for maxpressure
         '''
         ## phase value
         phase_value = np.matmul(self.batch_phase_matrix, state).squeeze()
