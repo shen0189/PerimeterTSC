@@ -164,8 +164,10 @@ class Simulator():
 
     def _get_peri_state(self):
         '''
-        Update the halting vehicle, inflow, outflow of peri lanes at each step within one interval
+        Update the halting vehicle and inflow of peri lanes at each step within one interval.
+        Update the (approximate) outflow of peri lanes of each interval with induction loops.
         '''
+        record_distance = 500   # 距离停车线的距离
         if self._step % 10 == 0:
             # 更新加入排队和新到达的车辆
             for signal_id, signal in self.peridata.peri_signals.items():
@@ -180,7 +182,7 @@ class Simulator():
                             if vehicle_id not in lane.queueing_vehicles:
                                 lane.queueing_vehicles.append(vehicle_id)
                         # 维护车道新进入车辆
-                        if vehicle_id not in lane.laststep_vehicles:
+                        if pos > lane.length - record_distance and vehicle_id not in lane.laststep_vehicles:
                             lane.entered_vehicles.append(vehicle_id)
                             if vehicle_id in self.vehicle_loc:
                                 former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
@@ -196,7 +198,8 @@ class Simulator():
                         else:
                             self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
                     # 更新laststep_vehicle
-                    lane.laststep_vehicles = vehicles
+                    lane.laststep_vehicles = [veh_id for veh_id in vehicles
+                                              if traci.vehicle.getDistance(veh_id) > lane.length - record_distance]
 
         if self._step % config['updatestep'] == 0:
             # 每个interval结束且更新了排队后, 更新离开车辆数
@@ -210,6 +213,19 @@ class Simulator():
                             # 清除记录
                             if self.vehicle_loc.get(vehicle, (0, 0))[1] == lane_id:
                                 self.vehicle_loc.pop(vehicle, None)
+
+        if self._step % config['detector_interval'] == 0:
+            # 每个检测器interval结束时记录车道的驶离车辆数（用于判断特殊情况, 可以有1-2辆的误差）
+            for signal_id, signal in self.peridata.peri_signals.items():
+                for lane_id, lane in signal.in_lanes.items():
+                    detector_id = lane_id + '_out'
+                    lane_outflow = traci.inductionloop.getLastIntervalVehicleNumber(detector_id)
+                    lane.outflow_vehicle_num += lane_outflow
+
+        if self._step % config['cycle_time'] == 0:
+            for signal_id, signal in self.peridata.peri_signals.items():
+                for lanegroup_id, lanegroup in signal.lane_groups.items():
+                    lanegroup.real_throughput = sum([lane.outflow_vehicle_num for lane in lanegroup.lanes.values()])
 
     def _simulate(self, num_step):
         # starttime = time.perf_counter()
