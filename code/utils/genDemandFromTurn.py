@@ -69,9 +69,13 @@ class TrafficGeneratorFromTurn:
         plot_demand_from_turn(config)
         for demand_info in config['DemandConfig']:
             flow_dict = {edge: [] for edge in demand_info['FromEdges']}
+            # the randomness of flow allocation only exists for flow from outside PN
+            origin = demand_info['DemandType'].split('-')[0]
+            scale = 0 if origin == 'PN' else config['scale']
+            # allocate flow
             for i in range(config['Demand_interval_number']):
                 edge_flow = flow_allocation(demand_info['VolumeProfile'][i] * demand_info['multiplier'],
-                                            demand_info['FromEdges'], scale=config['scale'])
+                                            demand_info['FromEdges'], scale=scale)
                 for edge, flow in edge_flow.items():
                     flow_dict[edge].append(flow)
             self.edge_flow_for_each_type.append(flow_dict)
@@ -155,7 +159,7 @@ class TrafficGeneratorFromTurn:
         
 
 
-def flow_allocation(total_flow: int, edge_list: list, scale: float = 1.):
+def flow_allocation(total_flow: int, edge_list: list, scale: float = 0.):
     """
     Allocate flow to each edge given the total flow
 
