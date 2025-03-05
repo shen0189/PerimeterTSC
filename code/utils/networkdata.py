@@ -28,9 +28,10 @@ except ImportError:
 import numpy as np
 
 class NetworkData:
-    def __init__(self, net_fp, sumo_cmd):
+    def __init__(self, net_fp, sumo_cmd, peridata):
         print(net_fp) 
         self.net = sumolib.net.readNet(net_fp)
+        self.peridata = peridata
         ###get edge data
         self.node_data, self.tls_data = self._get_node_data(self.net)
         self.edge_data = self._get_edge_data(self.net)
@@ -199,7 +200,7 @@ class NetworkData:
 
         traci.start(self.sumo_cmd)
         tl_junc = self._get_traffic_lights()
-        tsc = { tl_id:TrafficSignalController( tl_id, junc_id, 'train', self.netdata)  
+        tsc = { tl_id:TrafficSignalController( tl_id, junc_id, 'train', self.netdata, self.peridata)
                         for tl_id, junc_id in tl_junc.items() }
 
         for t_id, t_value in tsc.items():
