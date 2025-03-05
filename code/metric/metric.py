@@ -532,22 +532,22 @@ class Metric():
             vehicle_num=('tripinfo_arrival', 'count'),
             tripinfo_duration=('tripinfo_duration', 'sum')
         ).reset_index()
-        df_all_types_travel = df.groupby(['arrival_interval'], as_index=False).agg(
-            vehicle_num=('tripinfo_arrival', 'count'),
-            tripinfo_duration=('tripinfo_duration', 'sum')
-        ).reset_index()
         df_complete = pd.DataFrame(np.arange(0, config['max_steps'], config['trip_complete_interval'], dtype=float),
                                    columns=['arrival_interval'])
-        df_all_types_travel_complete = df_complete.merge(df_all_types_travel, on=['arrival_interval'], how='left')
+        trip_info_df_dict = {}
+        for trip_type, trip_info in df_travel.groupby('trip_type'):
+            trip_info = trip_info.drop(columns=['trip_type'])
+            trip_info_complete = df_complete.merge(trip_info, on=['arrival_interval'], how='left').fillna(1e-5)
+            trip_info_df_dict[trip_type] = trip_info_complete
 
-        # key值: 可以设置为demand类型
         trip_data = {'travel_time': {}, 'travel_veh_count': {}}
-        for trip_type in ['in-in', 'in-out', 'out-in']:
-            trip_data['travel_time'][trip_type] = list(df_travel[df_travel['trip_type'] == trip_type]['tripinfo_duration'])
-            trip_data['travel_veh_count'][trip_type] = list(df_travel[df_travel['trip_type'] == trip_type]['vehicle_num'])
-        trip_data['travel_time']['total'] = list(df_all_types_travel['tripinfo_duration'])
-        trip_data['travel_veh_count']['total'] = list(df_all_types_travel['vehicle_num'])
-        trip_data['completion'] = df_all_types_travel_complete['vehicle_num'].fillna(0).to_numpy()
+        for trip_type, trip_info in trip_info_df_dict.items():
+            trip_data['travel_time'][trip_type] = list(trip_info['tripinfo_duration'])
+            trip_data['travel_veh_count'][trip_type] = list(trip_info['vehicle_num'])
+        travel_time_all_types = [sum(tt) for tt in zip(*trip_data['travel_time'].values())]
+        vehicle_cnt_all_types = [sum(veh) for veh in zip(*trip_data['travel_veh_count'].values())]
+        trip_data['travel_time']['total'] = travel_time_all_types
+        trip_data['travel_veh_count']['total'] = vehicle_cnt_all_types
 
         return trip_data
 
@@ -566,9 +566,15 @@ class Metric():
 def get_trip_type(edge):
     if config['network'] == 'FullGrid':
         if edge['depart_edge'] in config['Edge_Peri']:
-            return 'out-out'
+            if edge['arrival_edge'] in config['Edge_Peri_out']:
+                return 'out-out'
+            else:
+                return 'out-in'
         else:
-            return 'in-in'
+            if edge['arrival_edge'] in config['Edge_Peri_out']:
+                return 'in-out'
+            else:
+                return 'in-in'
     if config['network'] == 'Grid':
         if edge['depart_edge'] in config['Edge_Peri']:
             return 'out-in'
