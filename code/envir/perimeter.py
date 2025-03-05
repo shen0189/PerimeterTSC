@@ -303,3 +303,18 @@ class Peri_Agent():
         # print(f'increment waiting vehicles on the buffer edge: {delta_buffer_wait_veh_tot}')
 
         return delta_buffer_wait_veh_tot, buffer_wait_veh_tot
+
+    def check_green_waste(self):
+        '''
+        check the abnormal performance on lanes at perimeter intersections, according to
+        the estimated throughput and real throughput. Possible reasons:
+            1) downstream link spillover
+            2) vehicles waiting for changing lanes
+        '''
+        for signal_id, signal in self.peridata.peri_signals.items():
+            for lanegroup_id, lanegroup in signal.lane_groups.items():
+                if lanegroup.real_throughput - lanegroup.estimate_throughput < -10:
+                    print(f'The green time is wasted at signal {signal_id}, lane group {lanegroup_id}')
+                    print(f'Estimated throughput: {lanegroup.estimate_throughput}, actual throughput: {lanegroup.real_throughput}')
+                    #
+
