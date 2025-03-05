@@ -3,6 +3,7 @@ import os, sys, copy
 import numpy as np
 from numpy.core.fromnumeric import mean, sort
 from utils.utilize import config
+from peritsc.perimeterdata import PeriSignals
 from collections import deque
 
 if 'SUMO_HOME' in os.environ:
@@ -21,17 +22,19 @@ class TrafficSignalController:
 
     Build your own traffic signal controller by implementing the follow methods.
     """
-    def __init__(self, tsc_id, junc_id, mode, netdata):
+    def __init__(self, tsc_id, junc_id, mode, netdata, peridata):
         self.id = tsc_id
         self.junc_id = junc_id
         # self.netdata = netdata
+        self.peridata: PeriSignals = peridata
         self.node = netdata['node'][self.junc_id]
         self.incoming_edges = netdata['node'][self.junc_id]['incoming']
         self._get_incoming_outgoing_lanes(netdata)
         self._get_incoming_edge_length_max(netdata)
         self.yellow_t = config['yellow_duration']
+        self.upper_mode = config['upper_mode']
         self.lower_mode = config['lower_mode']
-
+        self.PN_accu = 0
 
         ## lane capacity is the lane length divided by the average vehicle length+stopped headway
         self.lane_capacity = np.array([float(netdata['lane'][lane]['length'])/7.5 for lane in self.incoming_lanes])
@@ -118,6 +121,8 @@ class TrafficSignalController:
 
 
     #helper functions for rl controllers
+    def update_accu(self, accu):
+        self.PN_accu = accu
 
     def get_state(self):
         ''' get state of each junction
@@ -125,16 +130,16 @@ class TrafficSignalController:
         ## get state of inlane and outlane
         ''' OAM State'''
         if self.lower_mode == 'OAM':
-            inlane_state = self.get_inlane_state()
+            inlane_state = self._get_inlane_state()
 
-            outlane_state = self.get_outlane_state()
+            outlane_state = self._get_outlane_state()
             state = np.concatenate([inlane_state, outlane_state], axis=0)
 
 
             ''' Max pressure State'''
         elif self.lower_mode == 'MaxPressure':
-            state = np.concatenate([self.get_inlane_state(), self.get_outlane_state()], axis=0)
-            state = state[0,:] - state[1,:] ## inlane - outlane
+            state = np.concatenate([self._get_inlane_state(), self._get_outlane_state(), self._get_peri_weight()], axis=0)
+            state = state[0, :] - state[1, :] - state[2, :]  # inlane - outlane - peri(for N-MP, equal to 0 if not N-MP)
             state = np.expand_dims(state, axis=0)
 
         ''' FixTime '''
@@ -148,7 +153,7 @@ class TrafficSignalController:
             state = np.concatenate([state, complete], axis=-1)
         return state.T
 
-    def get_inlane_state(self):
+    def _get_inlane_state(self):
         ''' inlane state
         '''
 
@@ -182,7 +187,7 @@ class TrafficSignalController:
 
         return inlane_state
 
-    def get_outlane_state(self):
+    def _get_outlane_state(self):
         ''' outlane state
         '''
 
@@ -194,11 +199,11 @@ class TrafficSignalController:
                 halting_outlane_match = []
                 for out_lane in self.outgoing_lanes[in_lane]: # for all outlanes
                     halt_veh = traci.lane.getLastStepHaltingNumber(out_lane)
-                    halt_veh = halt_veh/2 if halt_veh>=50 else 0
-                    # halting_outlane_match.append(halt_veh)
+                    # halt_veh = halt_veh/2 if halt_veh>=50 else 0      # why this processing?
                     halting_outlane_match.append(halt_veh)
 
                 ## take average
+                # TODO: why mean?
                 outlane_halting_veh.append(mean(halting_outlane_match))
                 # outlane_halting_veh.append(max(halting_outlane_match))
 
@@ -226,7 +231,40 @@ class TrafficSignalController:
 
         return outlane_state
 
+    def _get_peri_weight(self):
+        '''
+        get the weight modification term of N-MP algorithm
+        '''
+        if self.lower_mode != 'MaxPressure':
+            raise NotImplementedError("Function should not be called for this lower mode. ")
 
+        if self.upper_mode != 'N-MP':
+            return np.vstack(np.zeros(len(self.incoming_lanes))[np.newaxis, :])
+        if self.PN_accu <= config['accu_critic']:
+            return np.vstack(np.zeros(len(self.incoming_lanes))[np.newaxis, :])
+        if self.junc_id not in config['Node']['NodePeri']:
+            return np.vstack(np.zeros(len(self.incoming_lanes))[np.newaxis, :])
+
+        # parameters
+        coef = 8
+        shape_coef = 400
+        PN_density = self.PN_accu / config['PN_total_length']
+        PN_critical_density = config['accu_critic'] / config['PN_total_length']
+
+        signal = self.peridata.peri_signals[self.junc_id]
+        inlane_peri_weight = []
+        for inlane_id in self.incoming_lanes:
+            inlane = signal.in_lanes[inlane_id]
+            if 'inflow' in [mov.type for mov in inlane.movements.values()]:
+                hal_veh = traci.lane.getLastStepHaltingNumber(inlane_id)
+                sigmoid = 1 / (1 + np.exp(-hal_veh / shape_coef)) - 0.5
+                weight = coef * pow((PN_density - PN_critical_density), 2) * sigmoid * 1000
+                print(f'The weight on lane {inlane_id} is {weight}')
+            else:
+                weight = 0
+            inlane_peri_weight.append(weight)
+        peri_weight = np.vstack([inlane_peri_weight])
+        return peri_weight
 
 
 if False:
