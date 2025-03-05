@@ -441,8 +441,14 @@ def simulate_one_episode_test(e, config):
 sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])
 # print(sumo_cmd)
 
-## 2. initialize demand generator & netdata
-nd = NetworkData(config['netfile_dir'], sumo_cmd)
+## 2. initialize demand generator & netdata & peridata
+# initialize perimeter signals
+peridata = PeriSignals(config['netfile_dir'], sumo_cmd)
+peridata.get_basic_inform()
+peridata.get_conflict_matrix()
+# peridata.check_conflict_matrix()
+
+nd = NetworkData(config['netfile_dir'], sumo_cmd, peridata)
 netdata = nd.get_net_data()
 tsc, tsc_peri = nd.update_netdata()
 
@@ -458,12 +464,6 @@ elif config['network'] == 'FullGrid':
     TrafficGen.generate_turn_file(config)
     TrafficGen.generate_flow_file(config)
     TrafficGen.generate_trip_file(config)
-
-# initialize perimeter signals
-peridata = PeriSignals(config['netfile_dir'], nd, sumo_cmd)
-peridata.get_basic_inform()
-peridata.get_conflict_matrix()
-# peridata.check_conflict_matrix()
 
 ## 3. init envir
 Env = Simulator(TrafficGen, netdata, peridata)
