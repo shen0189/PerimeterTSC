@@ -5,7 +5,6 @@ import xml.etree.cElementTree as ET
 import numpy as np
 import copy
 from typing import Dict, List, Union, Tuple
-from utils.networkdata import NetworkData
 
 
 class DownstreamLink:
@@ -111,9 +110,10 @@ class Lane:
         self.arrival_vehicle = 0    # number of vehicle entered within the last interval
         self.arrival_rate = 0
         self.queue = 0      # number of vehicle at the end of the interval
-        self.laststep_vehicles = []  # all the vehicles on the lane at the last step
+        self.laststep_vehicles = []     # vehicles on the lane **within the recorded area** at the last step
         self.queueing_vehicles = []     # vehicles that have already joined the queue
-        self.entered_vehicles = []      # newly entered vehicles in the last interval
+        self.entered_vehicles = []      # newly entered vehicles **in the recorded area** in the last interval
+        self.outflow_vehicle_num = 0    # number of vehicles passing the stop line (derived by induction loops)
 
         self.green_start: list = [0]
         self.green_duration: list = [0]
@@ -133,8 +133,10 @@ class Lane:
 
     def update_traffic_state(self):
         self.arrival_rate = len(self.entered_vehicles) / config['updatestep']
-        self.entered_vehicles = []
         self.queue = len(self.queueing_vehicles)
+        self.entered_vehicles = []
+        self.outflow_vehicle_num = 0
+
 
     def set_vehicle_length(self, vehicle_length: float):
         self.vehicle_length = vehicle_length
@@ -156,12 +158,13 @@ class LaneGroup:
     """
 
     def __init__(self, group_id: str, tls_id: str):
+        # [topology elements]
         self.id = group_id
         self.signal = tls_id
         self.type = None    # inflow / outflow / normal flow
         self.movements: Dict[str, Movement] = {}
         self.lanes: Dict[str, Lane] = {}
-
+        # [traffic parameters]
         self.length = 0     # 等于车道长度
         self.total_capacity = 0             # 所有车道可容纳车辆数, 与
         self.saturation_flow_rate = 0       # 所有车道的饱和流率之和, veh/h
@@ -170,13 +173,15 @@ class LaneGroup:
         self.total_queue = 0        # veh
         self.vehicle_length = 0     # average vehicle length
         self.saturation_limit = 0
-
+        # [model parameters]
         self.optimal_inflow = 0         # 上层模型优化结果, veh/s
         self.queue_pressure_coef = 0
         self.critical_queue_vehicle = 0
         self.target_queue_vehicle = 0
         self.target_inflow = 0        # veh/s
-
+        self.estimate_throughput = 0        # the estimated throughput of the last interval (from model)
+        self.real_throughput = 0            # the real throughput of the last interval (from simulation)
+        # [timing variables and parameters]
         self.green_start: list = [0]
         self.green_duration: list = [0]
         self.min_green = 0
@@ -215,7 +220,7 @@ class LaneGroup:
             if sum(target_inflows) <= optimal_inflow:
                 self.queue_pressure_coef = self.target_queue_vehicle / config['M']
             else:
-                print(f'Balance mode activate for lanegroup {self.id}')
+                # print(f'Balance mode activate for lanegroup {self.id}')
                 self.queue_pressure_coef = (sum(target_inflows) - optimal_inflow) * self.target_queue_vehicle / cycle
         elif control_mode in ['PI-Cordon', 'PI']:
             self.queue_pressure_coef = 1 / config['M']
@@ -248,6 +253,10 @@ class Intersection:
     def add_stage(self, new_stage: Stage):
         if new_stage.id not in self.stages:
             self.stages[new_stage.id] = new_stage
+
+    def add_edge(self, new_edge: str):
+        if new_edge not in self.in_edges:
+            self.in_edges.append(new_edge)
 
     def add_lane(self, new_lane: Lane):
         if new_lane.id not in self.in_lanes:
@@ -290,9 +299,8 @@ class Intersection:
 
 class PeriSignals:
 
-    def __init__(self, net_fp: str, netdata: NetworkData, sumo_cmd):
+    def __init__(self, net_fp: str, sumo_cmd):
         self.peri_info = config['Peri_info']
-        self.netdata: NetworkData = netdata
         self.peri_signals: Dict[str, Intersection] = {tls: Intersection(tls) for tls in self.peri_info}
         self.peri_nodes: List[str] = [tls['node'] for tls in self.peri_info.values()]
         self.peri_inflows: Dict[str, Movement] = {}     # 仅受控方向
@@ -325,6 +333,8 @@ class PeriSignals:
                     connection_dir = connection.attrib['dir']
                     if connection_dir == 't':
                         connection_dir = 'l'  # treat turn-about as left-turn
+                    # Add edges
+                    peri_signal.add_edge(from_edge)
                     # Add downstream links
                     new_downstream_link = DownstreamLink(tls_id=tls_id, link_id=to_edge)
                     peri_signal.add_downstream_link(new_downstream_link)
@@ -435,7 +445,8 @@ class PeriSignals:
         # For P11, P12, P13, P14, P15, index of eastbound edge > westbound edge
         for tls_id, tls_info in config['Peri_info'].items():
             node_id = tls_info['node']
-            in_edges = self.netdata.node_data[node_id]['incoming']
+            # in_edges = self.netdata.node_data[node_id]['incoming']
+            in_edges = self.peri_signals[node_id].in_edges
             edge_ns = [int(e) for e in in_edges if int(e) % 2 == 1]
             edge_ew = [int(e) for e in in_edges if int(e) % 2 == 0]
             if node_id in ['P11', 'P12', 'P13', 'P14']:
