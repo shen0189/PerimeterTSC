@@ -31,6 +31,7 @@ class Trainer():
         self.cycle_time = self.config['cycle_time']
         self.lower_mode = config['lower_mode']
         self.mode = config['mode']
+        self.record_fields = {}     # used for plot and save
 
     def run(self):
         ''' run the training for one epsiode
@@ -79,40 +80,16 @@ class Trainer():
         upper_metric['cul_obj'] = [sum(upper_metric['cul_reward'] + upper_metric['cul_penalty'])]
 
         ## 4.4 record
+        self.record(upper_metric, lower_metric)
         self.agent_upper.record(upper_metric)
         self.agent_lower.record(lower_metric)
-
         self.print_result(upper_metric, lower_metric)
 
         ## 4.5 plot
-        self.plot(accu_epis=lower_metric['accu'], flow_epis=lower_metric['flow'],
-                  cumul_obj_upper=upper_metric['cul_reward'][0],
-                  cumul_reward_lower=lower_metric['tsc_perveh_delay_mean'],
-                  peri_entered_vehs=upper_metric['peri_entered_vehs'],
-                  peri_waiting_tot=upper_metric['peri_waiting_tot'],
-                  peri_waiting_mean=upper_metric['peri_waiting_mean'],
-                  peri_spillover=lower_metric['peri_spillover'],
-                  peri_queue=lower_metric['peri_queue'], peri_throughput=lower_metric['peri_throughput'],
-                  peri_delay=lower_metric['peri_delay'],
-                  tsc_delay_step=lower_metric['tsc_delay_step'],
-                  tsc_perveh_delay_step=lower_metric['tsc_perveh_delay_step'],
-                  tsc_metrics=lower_metric['tsc_metrics'],
-                  peri_ordered_flow=upper_metric['ordered_inflow'],
-                  peri_estimate_inflow=upper_metric['estimated_inflow'],
-                  travel_time=lower_metric['avg_travel_time'],
-                  trip_completion=lower_metric['vehicle_completion'],
-                  link_density=lower_metric['PN_link_density'],
-                  netdata=self.agent_upper.netdata)
+        self.plot()
 
         ## 4.6 save
-        self.save(peri_queue=lower_metric['peri_queue'],
-                  peri_spillover=lower_metric['peri_spillover'],
-                  peri_throughput=lower_metric['peri_throughput'],
-                  peri_inflow=upper_metric['peri_entered_vehs'],
-                  peri_outflow=upper_metric['peri_outflow_vehs'],
-                  peri_delay=lower_metric['peri_delay'],
-                  accu=upper_metric['accu'],
-                  travel_time=lower_metric['avg_travel_time'])
+        self.save()
 
         ## 4.7 process output
         if self.mode == 'train':
@@ -252,11 +229,17 @@ class Trainer():
         if step % self.cycle_time == 0:
             ## update metric
             # self.agent_upper.metric.update_control_interval()
+            self.agent_upper.perimeter.check_green_waste()
 
             ##  end simu  '''Before the memorize '''
             done = self.check_gridlock(done, step)
 
-            self.agent_upper.get_memory(done)
+            upper_old_state = self.agent_upper.get_memory(done)
+            # record the PN accumulation at the lower agent for N-MP
+            if self.agent_upper.peri_mode == 'N-MP':
+                PN_accu = upper_old_state[0] * self.config['accu_max']
+                print(f'--------Current step: {step}, accumulation: {PN_accu }')
+                self.agent_lower.set_tsc_state(PN_accu)
 
         ## lower level
         # if self.lower_mode != 'FixTime':
@@ -344,110 +327,132 @@ class Trainer():
         '''
         print(
             f"\r\n### Episode {self.cur_epis + 1} Finish --- total obj upper: {upper_metric['cul_obj'][0]} = {upper_metric['cul_reward'][0]}+{upper_metric['cul_penalty'][0]}; #############\r\n network delay mean: {np.around(lower_metric['network_delay_mean'], 2)} sec; tsc delay mean:{np.around(lower_metric['tsc_delay_mean'], 2)} sec \r\n network perveh delay mean: {np.around(lower_metric['network_perveh_delay_mean'], 4)} sec; tsc perveh delay mean:{np.around(lower_metric['tsc_perveh_delay_mean'], 4)} sec \r\n tsc through mean: {np.around(lower_metric['tsc_through_mean'], 0)} veh/hr*tsc \r\n")
+        print(f"There are {lower_metric['PN_accu'][-1]} vehicles in the PN at the end of simulation. ")
 
-    def plot(self, accu_epis, flow_epis, cumul_obj_upper, cumul_reward_lower, peri_entered_vehs, peri_ordered_flow,
-             peri_waiting_tot, peri_waiting_mean, peri_spillover, peri_queue, peri_throughput, peri_delay,
-             peri_estimate_inflow, tsc_delay_step, tsc_perveh_delay_step, tsc_metrics, travel_time, trip_completion,
-             link_density, netdata):
-        ''' plot after one episode
+    def record(self, upper_metric: dict, lower_metric: dict):
         '''
-        ## upper actions
-        if self.agent_upper.peri_mode not in ['Static', 'MaxPressure']:
-            plot_actions(self.config, self.agent_upper.perimeter.green_time, \
-                         peri_entered_vehs, self.cur_epis, \
-                         self.agent_upper.action_type, self.n_jobs, self.agent_upper.perimeter.inflow_movements)
+        record necessary data fields for plot and save
+        '''
+        # upper level data (interval: cycle length)
+        self.record_fields['cumul_obj_upper'] = upper_metric['cul_reward'][0]
+        self.record_fields['peri_entered_vehs'] = upper_metric['peri_entered_vehs']
+        self.record_fields['peri_outflow_vehs'] = upper_metric['peri_outflow_vehs']
+        self.record_fields['peri_waiting_tot'] = upper_metric['peri_waiting_tot']
+        self.record_fields['peri_waiting_mean'] = upper_metric['peri_waiting_mean']
+        self.record_fields['peri_ordered_flow'] = upper_metric['ordered_inflow']
+        self.record_fields['peri_estimate_inflow'] = upper_metric['estimated_inflow']
+        # lower level data (interval: config['lower_agent_step'])
+        self.record_fields['cumul_reward_lower'] = lower_metric['tsc_perveh_delay_mean']
+        self.record_fields['PN_accu_epis'] = lower_metric['PN_accu']
+        self.record_fields['PN_flow_epis'] = lower_metric['PN_flow']
+        self.record_fields['PN_speed_epis'] = lower_metric['PN_speed']
+        self.record_fields['peri_spillover'] = lower_metric['peri_spillover']
+        self.record_fields['peri_queue'] = lower_metric['peri_queue']
+        self.record_fields['peri_throughput'] = lower_metric['peri_throughput']
+        self.record_fields['peri_delay'] = lower_metric['peri_delay']
+        self.record_fields['tsc_delay_step'] = lower_metric['tsc_delay_step']
+        self.record_fields['tsc_perveh_delay_step'] = lower_metric['tsc_perveh_delay_step']
+        self.record_fields['tsc_metrics'] = lower_metric['tsc_metrics']
+        self.record_fields['trip_avg_travel_time'] = lower_metric['avg_travel_time']
+        self.record_fields['trip_completion'] = lower_metric['vehicle_completion']
+        self.record_fields['PN_link_density'] = lower_metric['PN_link_density']
 
-        ''' ordered inflow and actual inflow '''
+    def plot(self):
+        ''' plot after one episode
+        02.10 update: the following performance indices are plotted and saved
+        1) perimeter level: queue length on each gated link & summation of all queue length
+        2) PN level: average speed of the PN / MFD of the PN
+        3) overall level: cumulative trip completion (of each type of demand)
+        '''
+
+        ''' perimeter level: queue length '''
+        max_lane_length = max([lanegroup.length for lanegroup in self.agent_lower.peridata.peri_lane_groups.values()])
+        # queue on each gated movement
+        plot_peri_queue_progression(self.config, self.record_fields['peri_queue'], max_lane_length, self.cur_epis, self.n_jobs)
+        # total queue length on all the gated links
+        peri_total_queue_evolve = [sum(queue) for queue in zip(*self.record_fields['peri_queue'].values())]
+        plot_feature_progression(self.config, peri_total_queue_evolve, self.cur_epis, self.n_jobs,
+                                 'peri_total_queue', 'queue length (m)')
+
+        # other indices: throughput, spillover, and delay
+        plot_feature_progression(self.config, self.record_fields['peri_throughput'], self.cur_epis, self.n_jobs,
+                                 'peri_throughput', 'Throughput (veh)')
+        plot_feature_progression(self.config, self.record_fields['peri_spillover'], self.cur_epis, self.n_jobs,
+                                 'peri_spillover', 'Spillover times')
+        plot_feature_progression(self.config, self.record_fields['peri_delay'], self.cur_epis, self.n_jobs,
+                                 'peri_delay', 'Delay (s)')
+
+        ## upper actions
+        # if self.agent_upper.peri_mode not in ['Static', 'MaxPressure']:
+        #     plot_actions(self.config, self.agent_upper.perimeter.green_time, \
+        #                  peri_entered_vehs, self.cur_epis, \
+        #                  self.agent_upper.action_type, self.n_jobs, self.agent_upper.perimeter.inflow_movements)
+
+        # ''' ordered inflow and actual inflow '''
         # plot_ordered_real_action(self.config, peri_estimate_inflow, peri_entered_vehs,
         #                          self.cur_epis, self.n_jobs)
 
-        ## MFD
-        plot_MFD(self.config, accu_epis, flow_epis, self.cycle_time, \
-                 self.cur_epis, cumul_obj_upper, self.n_jobs, cumul_reward_lower)
+        ''' PN level '''
+        # MFD
+        plot_MFD(self.config, self.record_fields['PN_accu_epis'], self.record_fields['PN_flow_epis'], self.cycle_time,
+                 self.cur_epis, self.record_fields['cumul_obj_upper'],
+                 self.n_jobs, self.record_fields['cumul_reward_lower'])
 
-        ## trip MFD
+        # trip MFD
         # plot_trip_MFD(self.config, accu_epis, trip_completion, self.cur_epis, self.n_jobs)
 
-        ## link density
-        plot_link_status(self.config, netdata, link_density, self.cur_epis, self.n_jobs)
+        # average speed in PN
+        plot_feature_progression(self.config, self.record_fields['PN_speed_epis'], self.cur_epis, self.n_jobs,
+                                 feature_title='PN_average_speed', ylabel_name='Average speed (m/s)')
 
-        ## plot flow
-        # plot_flow_progression(self.config, flow_epis, self.cur_epis , self.n_jobs)
+        # link density
+        plot_link_status(self.config, self.agent_upper.netdata, self.record_fields['PN_link_density'],
+                         self.cur_epis, self.n_jobs)
 
-        ## peri waiting time
-        # plot_peri_waiting(self.config, peri_waiting_tot, peri_waiting_mean, self.cur_epis, self.n_jobs)
+        # accumulation
+        plot_feature_progression(self.config, self.record_fields['PN_accu_epis'], self.cur_epis, self.n_jobs,
+                                 feature_title='PN_accu', ylabel_name='accumulation (veh)')
 
-        ## accu, through, buffer queue progress along the training
-        plot_accu(self.config, accu_epis, self.cur_epis, self.n_jobs)
-        # if self.cur_epis % self.n_jobs == 0:
-        #     plot_accu(self.config, accu_episode, throughput_episode, \
-        #         self.agent_upper.metric.halveh_buffer_list_epis, self.cur_epis)
+        # PN total delay (not used)
+        # TODO: currently not PN but the whole network
+        plot_feature_progression(self.config, self.record_fields['tsc_delay_step'], self.cur_epis, self.n_jobs,
+                                 feature_title='delay', ylabel_name='delay (s)')
+        plot_feature_progression(self.config, self.record_fields['tsc_perveh_delay_step'], self.cur_epis, self.n_jobs,
+                                 feature_title='delay_per_vehicle', ylabel_name='delay (s)')
+        # plot_controlled_tls_delay_epis(self.config, self.record_fields['tsc_delay_step'],
+        #                                self.cur_epis, self.n_jobs, 2000, 'tsc_delay')
+        # plot_controlled_tls_delay_epis(self.config, self.record_fields['tsc_perveh_delay_step'],
+        #                                self.cur_epis, self.n_jobs, 1, 'tsc_perveh_delay')
 
-        ## lower phase time
-        if self.lower_mode != 'FixTime':
-            pass
-            # plot_phase_mean_time(self.config, self.agent_lower.controled_light, \
-            #     self.agent_lower.tsc, self.cur_epis, self.n_jobs)
+        ''' overall level: cumulative trip completion '''
+        # cumulative completion (used when not all demands are served)
+        plot_feature_progression(self.config, self.record_fields['trip_completion'], self.cur_epis, self.n_jobs,
+                                 'trip_completion', 'Cumulative completion trips')
+        # average travel time progression (used when all demands are served)
+        plot_feature_progression(self.config, self.record_fields['trip_avg_travel_time'], self.cur_epis, self.n_jobs,
+                                 'travel_time', 'Time (s)')
 
-        ''' network delay with controlled tsc '''
-        plot_controlled_tls_delay_epis(self.config, tsc_delay_step, self.cur_epis, self.n_jobs, 2000, 'tsc_delay')
-        plot_controlled_tls_delay_epis(self.config, tsc_perveh_delay_step, self.cur_epis, self.n_jobs, 1,
-                                       'tsc_perveh_delay')
+        # total delay over the simulation process of each junction
+        plot_tsc_delay(self.config, self.record_fields['tsc_metrics'], self.cur_epis, self.n_jobs)
 
-        ''' each controlled tsc delay'''
-        plot_tsc_delay(self.config, tsc_metrics, self.cur_epis, self.n_jobs)
+    def save(self):
 
-        ''' each perimeter inflow queue length'''
-        max_lane_length = max([lanegroup.length for lanegroup in self.agent_lower.peridata.peri_lane_groups.values()])
-        # TODO: FullGrid场景下debug
-        plot_peri_queue_progression(self.config, peri_queue, max_lane_length, self.cur_epis, self.n_jobs)
-
-        ''' aggregated perimeter performance '''
-        plot_feature_progression(self.config, peri_throughput, self.cur_epis, self.n_jobs,
-                                      'peri_throughput', 'throughput (veh)')
-        plot_feature_progression(self.config, peri_spillover, self.cur_epis, self.n_jobs,
-                                      'peri_spillover', 'spillover times')
-        plot_feature_progression(self.config, peri_delay, self.cur_epis, self.n_jobs,
-                                      'peri_delay', 'delay (s)')
-
-        ''' vehicle travel time '''
-        plot_feature_progression(self.config, travel_time, self.cur_epis, self.n_jobs,
-                                      'travel_time', 'time (s)')
-
-    def save(self, *args, **kwargs):
-
-        if 'peri_throughput' in kwargs:
-            # perimeter total throughput evolution
-            peri_throughput: list = kwargs['peri_throughput']
-            save_stats(self.config, peri_throughput, self.cur_epis, self.n_jobs, 'peri_throughput')
-        if 'peri_queue' in kwargs:
-            # perimeter queue length evolution at each gated link
-            peri_queue: dict = kwargs['peri_queue']
-            save_stats(self.config, peri_queue, self.cur_epis, self.n_jobs, 'peri_queue')
-        if 'peri_spillover' in kwargs:
-            # perimeter total spillover evolution
-            peri_spillover: list = kwargs['peri_spillover']
-            save_stats(self.config, peri_spillover, self.cur_epis, self.n_jobs, 'peri_spillover')
-        if 'peri_inflow' in kwargs:
-            # perimeter total inflow
-            peri_inflow: np.ndarray = kwargs['peri_inflow']
-            save_stats(self.config, peri_inflow, self.cur_epis, self.n_jobs, 'peri_inflow')
-        if 'peri_outflow' in kwargs:
-            # perimeter total outflow
-            peri_outflow: np.ndarray = kwargs['peri_outflow']
-            save_stats(self.config, peri_outflow, self.cur_epis, self.n_jobs, 'peri_outflow')
-        if 'peri_delay' in kwargs:
-            peri_delay = kwargs['peri_delay']
-            save_stats(self.config, peri_delay, self.cur_epis, self.n_jobs, 'peri_delay')
-        if 'accu' in kwargs:
-            # PN accumulation
-            PN_accu = kwargs['accu']
-            save_stats(self.config, PN_accu, self.cur_epis, self.n_jobs, 'accu')
-        if 'travel_time' in kwargs:
-            # total travel time
-            travel_time: dict = kwargs['travel_time']
-            for travel_type, travel_time_data in travel_time.items():
-                save_stats(self.config, travel_time_data, self.cur_epis, self.n_jobs, 'travel_time_' + travel_type)
+        # PN level
+        save_stats(self.config, self.record_fields['PN_accu_epis'], self.cur_epis, self.n_jobs, 'PN_accu')
+        save_stats(self.config, self.record_fields['PN_flow_epis'], self.cur_epis, self.n_jobs, 'PN_flow')
+        save_stats(self.config, self.record_fields['PN_speed_epis'], self.cur_epis, self.n_jobs, 'PN_speed')
+        # perimeter level
+        save_stats(self.config, self.record_fields['peri_throughput'], self.cur_epis, self.n_jobs, 'peri_throughput')
+        save_stats(self.config, self.record_fields['peri_queue'], self.cur_epis, self.n_jobs, 'peri_queue')
+        save_stats(self.config, self.record_fields['peri_spillover'], self.cur_epis, self.n_jobs, 'peri_spillover')
+        save_stats(self.config, self.record_fields['peri_entered_vehs'], self.cur_epis, self.n_jobs, 'peri_inflow')
+        save_stats(self.config, self.record_fields['peri_outflow_vehs'], self.cur_epis, self.n_jobs, 'peri_outflow')
+        save_stats(self.config, self.record_fields['peri_delay'], self.cur_epis, self.n_jobs, 'peri_delay')
+        # overall level
+        for trip_type, trip_avg_time_data in self.record_fields['trip_avg_travel_time'].items():
+            save_stats(self.config, trip_avg_time_data, self.cur_epis, self.n_jobs, 'avg_travel_time_' + trip_type)
+        for trip_type, trip_completion in self.record_fields['trip_completion'].items():
+            save_stats(self.config, trip_completion, self.cur_epis, self.n_jobs, 'trip_completion_' + trip_type)
 
     def fill_upper_buffer_reward(self, upper_reward_epis, PN_waiting_epis):
 
