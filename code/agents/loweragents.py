@@ -233,7 +233,7 @@ class LowerAgents:
             if inter['tl_id'] not in self.perimeter_light:
                 controled_light_list.append(inter['tl_id'])
 
-        if self.upper_mode in ['OAM', 'MaxPressure']:
+        if self.upper_mode in ['OAM', 'MaxPressure', 'N-MP']:
             controled_light_list.extend(self.perimeter_light)
         
         return controled_light_list
@@ -392,12 +392,14 @@ class LowerAgents:
         ''' 1.5 network accumulation and mean density '''
         accu_epis = np.sum(
             (lane_data['sampledSeconds'] / step), axis=1)
-        lower_metric['accu'] = accu_epis
+        lower_metric['PN_accu'] = accu_epis
 
-        ''' 1.6 network flow '''
+        ''' 1.6 PN flow and speed '''
+        speed_epis = np.mean(lane_data['speed'], axis=1)
+        lower_metric['PN_speed'] = speed_epis   # m/s
         flow_epis = np.mean(
             lane_data['speed'] * lane_data['density'] * 3.6, axis=1)  # veh/h
-        lower_metric['flow'] = flow_epis
+        lower_metric['PN_flow'] = flow_epis
 
         ''' 1.7 PN link density '''
         lower_metric['PN_link_density'] = lane_data['link_density']
@@ -480,22 +482,19 @@ class LowerAgents:
         avg_delay = [sum(delay_tuple) / len(delay_tuple) for delay_tuple in zip(*peri_delay_dict.values())]
         lower_metric['peri_delay'] = avg_delay
 
-        ''' 5.1 vehicle travel time '''
-        total_travel_time_record, avg_travel_time_record = {}, {}
-        # travel_veh_record = {}
-        trip_type_list = ['in-in', 'in-out', 'out-in', 'total']
-        for trip_type in trip_type_list:
-            trip_travel_time, trip_travel_veh = trip_data['travel_time'][trip_type], trip_data['travel_veh_count'][trip_type]
-            travel_time_progression = [sum(trip_travel_time[:i + 1]) for i in range(len(trip_travel_time))]
-            total_travel_time_record[trip_type] = travel_time_progression
-            travel_veh_progression = [sum(trip_travel_veh[:i + 1]) for i in range(len(trip_travel_veh))]
-            avg_travel_time_progession = [tt/v_cnt for (tt, v_cnt) in zip(travel_time_progression, travel_veh_progression)]
-            avg_travel_time_record[trip_type] = avg_travel_time_progession
-        lower_metric['total_travel_time'] = total_travel_time_record
-        lower_metric['avg_travel_time'] = avg_travel_time_record
+        ''' 5.1 vehicle completion rate (used when not all demand are served) '''
+        cumul_completion = {}
+        for trip_type, complete_veh_count in trip_data['travel_veh_count'].items():
+            cumul_completion[trip_type] = [sum(complete_veh_count[:i + 1]) for i in range(len(complete_veh_count))]
+        lower_metric['vehicle_completion'] = cumul_completion
 
-        ''' 5.2 vehicle completion rate '''
-        lower_metric['vehicle_completion'] = trip_data['completion']
+        ''' 5.2 vehicle travel time (used when all demand can be served) '''
+        total_travel_time, avg_travel_time = {}, {}
+        for trip_type, travel_time in trip_data['travel_time'].items():
+            total_travel_time[trip_type] = [sum(travel_time[:i + 1]) for i in range(len(travel_time))]
+            avg_travel_time[trip_type] = [tt/veh for (tt, veh) in zip(total_travel_time[trip_type], cumul_completion[trip_type])]
+        lower_metric['total_travel_time'] = total_travel_time
+        lower_metric['avg_travel_time'] = avg_travel_time
 
         return lower_metric
 
@@ -764,6 +763,10 @@ class MaxPressure(LowerAgents):
             batch_state.append(state)
              
         return np.array(batch_state)
+
+    def set_tsc_state(self, accu):
+        for tl_id in self.controled_light:
+            self.tsc[tl_id].update_accu(accu)
 
     def _get_phase_value(self, state):
         ''' get phase value for maxpressure
