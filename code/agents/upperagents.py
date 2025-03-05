@@ -56,11 +56,11 @@ class UpperAgents:
         self.max_green = config['max_green']
 
         # states
-        if self.peri_mode in ['Static', 'Webster']:  # Static' # 'DDPG' #'DQN' # 'Expert''
+        if self.peri_mode in ['Static', 'Webster', 'MaxPressure']:  # Static' # 'DDPG' #'DQN' # 'Expert''
             self.states = []
         elif self.peri_mode == 'Expert':
             self.states = ['accu', 'accu_buffer', 'future_demand']
-        elif self.peri_mode == 'PI':
+        elif self.peri_mode in ['PI', 'N-MP']:
             self.states = ['accu']
         else:  # for RL
             self.states = config['states']
@@ -196,6 +196,11 @@ class UpperAgents:
             self.action_type = 'MaxPressure'
             return
 
+        # For N-MP
+        if self.peri_mode == 'N-MP':
+            self.action_type = 'N-MP'
+            return
+
         # For PI-based controller
         if self.peri_mode == 'PI':
             self.action_type = 'PI'
@@ -235,7 +240,7 @@ class UpperAgents:
         print(f'Current time step: {step}')
 
         # no action for MP controller
-        if self.peri_mode == 'MaxPressure':
+        if self.peri_mode in ['MaxPressure', 'N-MP']:
             return
 
         # change the signal program after given time for static controller
@@ -360,6 +365,8 @@ class UpperAgents:
         # 3.6. Calculate one-step objective (reward+penalty)
         # self.cumul_reward += reward  # reward along this episode
         # self.cumul_penalty += penalty
+
+        return self.old_state
 
     def record(self, upper_metric):
         ''' record performace of each epis
