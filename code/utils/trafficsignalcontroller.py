@@ -255,7 +255,7 @@ class TrafficSignalController:
         inlane_peri_weight = []
         for inlane_id in self.incoming_lanes:
             inlane = signal.in_lanes[inlane_id]
-            if 'inflow' in [mov.type for mov in inlane.movements.values()]:
+            if inlane.type == 'inflow':
                 hal_veh = traci.lane.getLastStepHaltingNumber(inlane_id)
                 sigmoid = 1 / (1 + np.exp(-hal_veh / shape_coef)) - 0.5
                 weight = coef * pow((PN_density - PN_critical_density), 2) * sigmoid * 1000
