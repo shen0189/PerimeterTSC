@@ -33,7 +33,7 @@ class LowerAgents:
         ## network config
         self.tsc = tsc
         self.netdata = netdata
-        self.peridata = peridata
+        self.peridata: PeriSignals = peridata
         self.perimeter_light = list(config['Peri_info'].keys())      # + ['P0', 'P1', 'P2', 'P3']
         self.lower_mode = config['lower_mode']
         self.upper_mode = config['upper_mode']
@@ -51,8 +51,9 @@ class LowerAgents:
         if self.lower_mode!='FixTime':
             self.tls_config = config['tls_config_name']
             self._get_signal_configure() ## get signals 
-            self.batch_phase_matrix, self.batch_phase_masks, self.batch_signals\
-                = self._get_batch_signal_matrix()
+            # self.batch_phase_matrix, self.batch_phase_masks, self.batch_signals\
+            #     = self._get_batch_signal_matrix()
+        self._get_batch_signal_matrix()
 
         ## perimeter config
         self.spillover_threshold = config['spillover_threshold']
@@ -110,7 +111,7 @@ class LowerAgents:
         ## 4. 
         self.action_index = 0
 
-    def store_memory(self, done):
+    def store_memory(self):
         ''' collect state, reward, penalty to store memory
         '''
 
@@ -220,9 +221,10 @@ class LowerAgents:
             batch_signals.append(signal)
             # batch_capacity.append(capacity)
 
-
-
-        return np.array(batch_phase_matrix),  np.array(batch_phase_mask), np.array(batch_signals)
+        self.batch_phase_matrix = np.array(batch_phase_matrix)
+        self.batch_phase_masks = np.array(batch_phase_mask)
+        self.batch_signals = np.array(batch_signals)
+        # return np.array(batch_phase_matrix),  np.array(batch_phase_mask), np.array(batch_signals)
 
     def _get_control_light_list(self,inters):
         ''' get the list of the controled light of lower lever
@@ -238,6 +240,16 @@ class LowerAgents:
         
         return controled_light_list
 
+    def _update_control_light_list(self, extend_idx):
+        if extend_idx == 1:
+            for tl_id in self.perimeter_light:
+                if tl_id not in self.controled_light:
+                    self.controled_light.append(tl_id)
+        elif extend_idx == -1:
+            for tl_id in self.perimeter_light:
+                if tl_id in self.controled_light:
+                    self.controled_light.remove(tl_id)
+
     def _get_signal_configure(self):
         ''' import phase action matrix and signal settings
         '''
@@ -250,7 +262,7 @@ class LowerAgents:
 
             ## set matrix and signal
             t_value.matrix = MATRIX[t_id]
-            t_value.signals = SIGNAL[t_id] 
+            t_value.signals = SIGNAL[t_id]
             t_value.capacity = CAPACITY[t_id] 
 
             ## completion of the matrix
@@ -277,7 +289,12 @@ class LowerAgents:
             t_value.mask = mask
 
 ## for action
-    def implem_action_all(self):
+    def implem_action_all(self, extend_idx=0):      # 0: no change / 1: extend / -1: remove
+
+        if extend_idx != 0:
+            self._update_control_light_list(extend_idx)
+            self._get_batch_signal_matrix()
+            self.old_state = self.get_state()
 
         if self.lower_mode == 'FixTime':
             self.get_action()
@@ -357,6 +374,8 @@ class LowerAgents:
             # time
             if tsc.cur_phase == tsc.prev_phase: ## keep
                 tsc.cur_phase_time += self.control_interval
+                if tl_id in self.peridata.peri_signals:
+                    self.peridata.update_green_from_phase_index(tl_id, tsc.cur_phase_idx, self.control_interval)
             else: ## switch
                 ## record
                 tsc.phase_time_list.append(tsc.cur_phase_time) # phase time
@@ -364,6 +383,9 @@ class LowerAgents:
                 
                 ## update
                 tsc.cur_phase_time = self.control_interval-self.yellow_duration
+                if tl_id in self.peridata.peri_signals:
+                    self.peridata.update_green_from_phase_index(tl_id, tsc.cur_phase_idx,
+                                                                self.control_interval - self.yellow_duration)
 
 ## metric
     def get_metric_each_epis(self, lane_data, queue_data: dict, trip_data: dict):
@@ -462,6 +484,7 @@ class LowerAgents:
                                 k in self.peridata.peri_nodes}
         total_throughput = [sum(throughput_tuple) for throughput_tuple in zip(*peri_throughput_dict.values())]
         total_throughput_progression = [sum(total_throughput[:i+1]) for i in range(len(total_throughput))]
+        lower_metric['peri_throughput_each_tsc'] = peri_throughput_dict
         lower_metric['peri_throughput'] = total_throughput_progression
 
         ''' 4.2 peri inflow queue length (maximum queue length in one interval) '''
@@ -795,7 +818,7 @@ class FixTime(LowerAgents):
 
     def __init__(self, tsc, netdata, peridata):
         super().__init__(tsc, netdata, peridata)
-        self.program_id = '0'  if config['network'] == 'Grid' else 2
+        self.program_id = '0'  if config['network'] in ['Grid', 'FullGrid'] else 2
         # '2' -- acturated, max_dur = 90 sec
         # '3' -- acturated, max_dur = 45 sec
 
