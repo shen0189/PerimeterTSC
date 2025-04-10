@@ -81,7 +81,7 @@ class Simulator():
         #                                 traci.constants.LAST_STEP_VEHICLE_NUMBER,
         #                                 traci.constants.LAST_STEP_OCCUPANCY])
 
-        
+
         # ## edge data subscribe
         # for edge in (self.netdata['edge']).keys():
         #     traci.edge.subscribe(edge, [traci.constants.LAST_STEP_MEAN_SPEED, 
@@ -109,7 +109,7 @@ class Simulator():
         done = False
         if self._step >= self.max_steps:
             done = True
-            
+
         ## get data output
         #  1. for OAM
         #  2. for upper level update   
@@ -118,32 +118,32 @@ class Simulator():
         # lane_data = traci.lane.getAllSubscriptionResults()
         # edge_data = traci.edge.getAllSubscriptionResults()
 
-        
+
         return self._step, done, lane_data, edge_data
 
 
     def _set_phase(self, phase_type, phase_duration):
         for tl_id in self.agent_lower.controled_light:
             phase = self._get_node_phase(tl_id, phase_type)
-            traci.trafficlight.setRedYellowGreenState(tl_id, phase)
+            traci.trafficlight.setRedYellowGreenState(tl_id, phase)     # programID will be set to 'online'
             traci.trafficlight.setPhaseDuration(tl_id, phase_duration)
-    
+
     def _get_node_phase(self, tl_id, phase_type):
         ''' get the phase of the node given the signal type 
         '''
-        
+
         tsc = self.agent_lower.tsc[tl_id]
         cur_phase = tsc.cur_phase
         prev_phase = tsc.prev_phase
-        
+
         ## 1. green phase -- keep the current phase
         if phase_type == 'green':
             return cur_phase
-        
+
         ## 2. no change of the phase -- no amber, maintain current
         if prev_phase == cur_phase:  # no amber, maintain
             return cur_phase
-        
+
         ## 3. signal changed, set the yellow phase
         switch_reds = []
         switch_greens = []
@@ -154,7 +154,7 @@ class Simulator():
                 switch_greens.append(i)
         if not len(switch_reds):
             return cur_phase
-            
+
         yellow_phase = list(cur_phase)
         for i in switch_reds:
             yellow_phase[i] = 'y'
@@ -169,46 +169,73 @@ class Simulator():
         '''
         record_distance = 500   # 距离停车线的距离
         if self._step % 10 == 0:
-            # 更新加入排队和新到达的车辆
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
+                    # 记录停车车辆数 (用于更新critical point)
+                    halt_num = traci.lane.getLastStepHaltingNumber(lane_id)
+                    if halt_num > lane.this_interval_max_halting_number:
+                        lane.this_interval_max_halting_number = halt_num
+
+                    # 更新个体车辆信息
+                    left_lane_id = lane_id.split('_')[0] + '_2'
+                    left_lane = signal.in_lanes[left_lane_id]
                     vehicles: list = traci.lane.getLastStepVehicleIDs(lane_id)
                     for vehicle_id in vehicles:
-                        # 维护车道排队车辆
+                        # 车辆信息
                         speed = traci.vehicle.getSpeed(vehicle_id)
-                        pos = traci.vehicle.getDistance(vehicle_id)
-                        if speed < 0.1 and pos > 5:     # pos用于排除刚加入路网的车辆
-                            # 第一次停车时加入车道队列
-                            if vehicle_id not in lane.queueing_vehicles:
-                                lane.queueing_vehicles.append(vehicle_id)
-                        # 维护车道新进入车辆
-                        if pos > lane.length - record_distance and vehicle_id not in lane.laststep_vehicles:
-                            lane.entered_vehicles.append(vehicle_id)
-                            if vehicle_id in self.vehicle_loc:
-                                former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
-                                if former_lane_id != lane_id:   # 变道车辆
-                                    former_lane = self.peridata.peri_signals[former_signal_id].in_lanes[former_lane_id]
-                                    if vehicle_id in former_lane.entered_vehicles:
-                                        former_lane.entered_vehicles.remove(vehicle_id)
-                        # 维护每辆车所在车道信息
-                        if vehicle_id in self.vehicle_loc:
-                            former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
-                            if former_lane_id != lane_id:  # 变道车辆
-                                self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
+                        pos = traci.vehicle.getLanePosition(vehicle_id)
+                        if left_lane_id == lane_id or speed > 0.1 or left_lane.queue < 50:      # 减少判断次数
+                            is_blocked_vehicle = False
                         else:
-                            self.vehicle_loc[vehicle_id] = (signal_id, lane_id)
-                    # 更新laststep_vehicle
-                    lane.laststep_vehicles = [veh_id for veh_id in vehicles
-                                              if traci.vehicle.getDistance(veh_id) > lane.length - record_distance]
+                            try:
+                                is_blocked_vehicle = check_blocked_vehicle(
+                                    traci.vehicle.getLaneChangeState(vehicle_id, 1)[0])
+                            except:
+                                is_blocked_vehicle = False
+                        # if is_blocked_vehicle:
+                        #     print(f'blocked vehicle: {vehicle_id} on lane {lane_id}')
+
+                        # 被堵塞车辆: 不需要根据速度决定是否加入排队
+                        if is_blocked_vehicle:
+                            if vehicle_id not in left_lane.virtual_queue_vehicles:
+                                left_lane.virtual_queue_vehicles.append(vehicle_id)
+                            if vehicle_id not in self.vehicle_loc:
+                                left_lane.entered_vehicles.append(vehicle_id)
+                                self.vehicle_loc[vehicle_id] = [signal_id, left_lane_id]
+                        # 普通车辆
+                        else:
+                            # Case 1: 之前为被堵塞车辆, 现在变道完成(lane=left_lane)
+                            if vehicle_id in lane.virtual_queue_vehicles:
+                                lane.virtual_queue_vehicles.remove(vehicle_id)
+                                lane.queueing_vehicles.append(vehicle_id)
+                            # Case 2: 其他普通车辆
+                            else:
+                                if speed < 0.1 and pos > 10:
+                                    if vehicle_id not in lane.queueing_vehicles:
+                                        lane.queueing_vehicles.append(vehicle_id)
+                                if pos > lane.length - record_distance:
+                                    if vehicle_id not in self.vehicle_loc:  # 新车辆
+                                        lane.entered_vehicles.append(vehicle_id)
+                                        self.vehicle_loc[vehicle_id] = [signal_id, lane_id]
+                                    else:   # 已在路网上的车辆
+                                        former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
+                                        if former_lane_id != lane_id:   # 1) 变道 2) 进入下一个link
+                                            former_lane = self.peridata.peri_signals[former_signal_id].in_lanes[former_lane_id]
+                                            if vehicle_id in former_lane.entered_vehicles and former_signal_id == signal_id:
+                                                former_lane.entered_vehicles.remove(vehicle_id)
+                                                lane.entered_vehicles.append(vehicle_id)
+                                            self.vehicle_loc[vehicle_id] = [signal_id, lane_id]
 
         if self._step % config['updatestep'] == 0:
             # 每个interval结束且更新了排队后, 更新离开车辆数
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
+                    left_lane_id = lane_id.split('_')[0] + '_2'
+                    left_lane = signal.in_lanes[left_lane_id]
                     # 离开车辆: 对比当前车道上的车辆和队列中的车辆, 删除不在车道上的车辆
                     current_vehicles = traci.lane.getLastStepVehicleIDs(lane_id)
                     for vehicle in reversed(lane.queueing_vehicles):
-                        if vehicle not in current_vehicles:
+                        if vehicle not in (list(current_vehicles) + left_lane.virtual_queue_vehicles):
                             lane.queueing_vehicles.remove(vehicle)
                             # 清除记录
                             if self.vehicle_loc.get(vehicle, (0, 0))[1] == lane_id:
@@ -223,9 +250,16 @@ class Simulator():
                     lane.outflow_vehicle_num += lane_outflow
 
         if self._step % config['cycle_time'] == 0:
+            # 周期结束时获取出口道的最末端停车车辆位置
             for signal_id, signal in self.peridata.peri_signals.items():
-                for lanegroup_id, lanegroup in signal.lane_groups.items():
-                    lanegroup.real_throughput = sum([lane.outflow_vehicle_num for lane in lanegroup.lanes.values()])
+                for lane_id, lane in signal.out_lanes.items():
+                    vehicles = traci.lane.getLastStepVehicleIDs(lane_id)
+                    for vehicle_id in vehicles:
+                        speed = traci.vehicle.getSpeed(vehicle_id)
+                        pos = traci.vehicle.getLanePosition(vehicle_id)
+                        if speed < 0.1 and pos > 10:    # 排除刚生成的车辆
+                            if pos < lane.last_halt_position:
+                                lane.last_halt_position = pos
 
     def _simulate(self, num_step):
         # starttime = time.perf_counter()
@@ -234,7 +268,7 @@ class Simulator():
             traci.simulationStep()
             self._step += 1
             self._get_peri_state()
-        
+
         # endtime = time.perf_counter()
         # # endtime = datetime.datetime.now()
         # run_time = (endtime - starttime)*1000
@@ -252,27 +286,42 @@ class Simulator():
         return state
 
 
+def check_blocked_vehicle(lc_state: int):
+    state = []
+    i = 0
+    while lc_state > 0:
+        if lc_state & 1:
+            state.append(i)
+        lc_state >>= 1
+        i += 1
+
+    if 1 in state and 8 in state:   # 1: left; 8: urgent
+        return True
+    else:
+        return False
+
+
 if False:
     def get_state(self):
         ''' obtain state of the controller: store in the state_dict
         '''
         state = []
         for state_type in self.states:
-            
+
             ### 1.accumulation of PN after normalization
             if state_type == 'accu':
                 accu_PN, _ = self.Metric.get_accu(info_inter_flag=True)
                 accu_PN = accu_PN / config['accu_max'] # normalize
                 # self.state_dict['accu'].append(accu_PN)
                 state.append(accu_PN)
-            
+
             ### 2. accumulation of buffer after normalization
             elif state_type == 'accu_buffer':
                 _, accu_buffer = self.Metric.get_accu(info_inter_flag=True)
                 accu_buffer = accu_buffer / config['accu_buffer_max'] # normalize
                 # self.state_dict['accu_buffer'].append(accu_buffer)
                 state.append(accu_buffer)
-            
+
             ### 3. occupancy of the downlane in the perimeter
             elif state_type == 'down_edge_occupancy':
                 self.Perimeter.get_down_edge_occupancy()
@@ -287,7 +336,7 @@ if False:
                 state.extend(self.Perimeter.buffer_average_occupancy)
                 # self.state_dict['buffer_aver_occupancy'].append(
                 #     self.Perimeter.buffer_average_occupancy)
-            
+
             ### 5. demand of next step
             elif state_type == 'future_demand':
                 cycle_index = int(self.info_update_index/self.Metric.info_length)
@@ -312,7 +361,7 @@ if False:
                 # self.state_dict['network_mean_speed'].append(network_mean_speed)
                 state.append(network_mean_speed)
 
-            
+
             ### 8. network PN halting vehicles 
             elif state_type == 'network_halting_vehicles':
                 _, PN_halt_vehs = self.Metric.get_halting_vehs(info_inter_flag=True)
@@ -345,7 +394,7 @@ if False:
 
         else: # decentralized actions
             action = action * upper_bound
-           
+
         # print(f"actual ation: {action}")
         return action
 
@@ -383,7 +432,7 @@ if False:
         Execute steps in sumo while gathering statistics
         """
         done = False
-        
+
         # do not do more steps than the maximum allowed number of steps
         if (self._step + steps_todo) >= self.max_steps:
             steps_todo = self.max_steps - self._step
@@ -393,7 +442,7 @@ if False:
 
             ## check the signal to switch
             self.Perimeter.switch_phase(self._step)
-            
+
             ## simulate one step
             traci.simulationStep()  # simulate 1 step in sumo
             # update time index
@@ -411,7 +460,7 @@ if False:
 
         # get actual entered vehs from the perimeter
         entered_veh_control_interval = self.Metric.get_entered_veh_control_interval()
-        
+
         # get reward
         reward = self.get_reward()
 
@@ -425,7 +474,7 @@ if False:
 
         return state, reward, penalty, done, entered_veh_control_interval
 
-    def get_reward(self):   
+    def get_reward(self):
         ''' Collect reward for each simulation step
         '''
         ## 1. production within control interval ( speed * veh )
@@ -433,12 +482,12 @@ if False:
         # print(f'Production = {production_control_interval}')
         reward = production_control_interval / config['production_control_interval_max']
 
-        return reward 
+        return reward
 
     def get_penalty(self, entered_veh_control_interval):
         ''' Collect reward for each simulation step
         '''
-        halveh_buffer, halveh_PN = self.Metric.get_halting_vehs() 
+        halveh_buffer, halveh_PN = self.Metric.get_halting_vehs()
         penalty = -(halveh_buffer/1000)**2
 
         penalty = np.clip(penalty, -4, 0)
