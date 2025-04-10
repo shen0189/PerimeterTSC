@@ -73,6 +73,8 @@ class UpperAgents:
                             'density_heter_PN', 'peri_waiting_mean', 'peri_waiting_tot']
         self.ordered_action = []
         self.estimated_inflow = []
+        self.cumul_green = {'inflow': [], 'outflow': [], 'normal flow': []}
+        self.cumul_throughput = {'inflow': [], 'outflow': [], 'normal flow': []}
         self.record_epis = {}
         for key in self.metric_list:
             self.record_epis[key] = []
@@ -107,7 +109,7 @@ class UpperAgents:
         # perimeter
         self.tsc_peri = tsc_peri
         self.perimeter = Peri_Agent(self.tsc_peri, self.peridata)
-
+        self.accu_last = 0
         self.accu_crit = None
 
     def reset(self):
@@ -233,45 +235,66 @@ class UpperAgents:
 
         # print(f'############ Episode {e}: Action type is {self.action_type} #################')
 
-    def implem_action_all(self, step):
-        ''' get state, get action, implement action
+    def implem_action_all(self, step) -> bool:
         '''
-
-        print(f'Current time step: {step}')
+        get state, get action, implement action
+        return: whether the controlled list of lower agents should include perimeter signals
+        '''
 
         # no action for MP controller
         if self.peri_mode in ['MaxPressure', 'N-MP']:
-            return
+            for signal in self.peridata.peri_signals.values():
+                signal.reset()
+            return True
 
         # change the signal program after given time for static controller
         if self.peri_mode == 'Static':
             if step >= config['switch_signal_plan_step'] and self.perimeter.switch_to_normal_plan is False:
                 self.perimeter.set_normal_program_for_static()
                 self.perimeter.switch_to_normal_plan = True
-            return
+            return False
 
-        # determine the signal program of each peri-signal for Webster controller
+        # Webster controller: does not require PN state
         if self.peri_mode == 'Webster':
             self.perimeter.get_full_greensplit(peri_mode=self.peri_mode)
             self.perimeter.set_full_program()
-            return
+            return False
 
-        # 1. get action
-        self.a, is_expert = self.get_action_all(self.old_state)
+        # PI controller
+        if self.peri_mode == 'PI':
 
-        # 2.action coordination (a in veh/s)
-        # a = self._action_coordinate_transformation(self.max_green, self.a)
-        a = self.a
-        a_veh = a * config['cycle_time']
-        print("Inflow vehicle number given by PI controller: ", a_veh)
-        self.ordered_action.append(a)
+            accu = self.old_state[0] * config['accu_max']
 
-        # 3. assign the vehicle to each perimeter and obtain the phase duration
-        estimate_inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a)
-        self.estimated_inflow.append(estimate_inflow)
+            if accu <= config['accu_activate']:     # PN车辆未达到阈值时采用MP控制
+                self.accu_last = accu
+                for signal in self.peridata.peri_signals.values():
+                    signal.reset()
+                return True
+            else:
+                (self.a, a_sup), is_expert = self.get_action_all(self.old_state)
+                a = self.a
+                a_veh = a * config['cycle_time']
+                print("Inflow vehicle number given by PI controller: ", a_veh)
+                self.ordered_action.append(a)
+                estimate_inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a,
+                                                                     action_bound=a_sup)
+                self.estimated_inflow.append(estimate_inflow)
+                self.perimeter.set_full_program()
+                return False
 
-        # 4. set program
-        self.perimeter.set_full_program()
+        # Learning-based controller
+        else:       # 'DDPG' # 'DQN' # 'C_DQN' # 'Expert'
+            self.a, is_expert = self.get_action_all(self.old_state)
+            a = self.a      # veh/s
+            a_sup = self.a
+            # a = self._action_coordinate_transformation(self.max_green, self.a)
+            self.ordered_action.append(a)
+
+            estimate_inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a, action_bound=a_sup)
+            self.estimated_inflow.append(estimate_inflow)
+
+            self.perimeter.set_full_program()
+            return False
 
     def get_action_all(self, old_state):
         ''' get action of upper level with different controllers
@@ -287,7 +310,7 @@ class UpperAgents:
             # print(f'###{e}: testing ####')
 
         elif self.action_type == 'PI':
-            a = self.get_action(old_state)
+            a: tuple = self.get_action(old_state)
             is_expert = False
             # if self.peri_action_mode =='decentralize':
             #     a = np.array([a] * self.act_dim)
@@ -365,6 +388,25 @@ class UpperAgents:
         # 3.6. Calculate one-step objective (reward+penalty)
         # self.cumul_reward += reward  # reward along this episode
         # self.cumul_penalty += penalty
+
+        # record the cumulative green time / throughput of peri signals
+        this_step_total_green = {'inflow': 0, 'outflow': 0, 'normal flow': 0}
+        this_step_throughput = {'inflow': 0, 'outflow': 0, 'normal flow': 0}
+        for signal_id, signal in self.peridata.peri_signals.items():
+            for lane_id, lane in signal.in_lanes.items():
+                lane_type = lane.type
+                if lane_type not in this_step_total_green:
+                    for mov in lane.movements.values():
+                        if mov.dir == 's':
+                            lane_type = mov.type
+                this_step_total_green[lane_type] += lane.green_duration[0]
+                this_step_throughput[lane_type] += lane.outflow_vehicle_num
+        for mov_type, green in this_step_total_green.items():
+            self.cumul_green[mov_type].append(green)
+            self.cumul_throughput[mov_type].append(this_step_throughput[mov_type])
+        # for signal in self.peridata.peri_signals.values():
+        #     signal.reset()
+        # self.peridata.reset_green_time()
 
         return self.old_state
 
@@ -593,6 +635,13 @@ class UpperAgents:
 
         ''' Ordered inflow '''
         metric['ordered_inflow'] = self.ordered_action
+
+        ''' cumulative green on perimeter '''
+        # for mov_type, green_record in self.cumul_green.items():
+        #     green_evolve = [sum(green_record[:i + 1]) for i in range(len(green_record))]
+        #     self.cumul_green[mov_type] = green_evolve
+        metric['cumul_green'] = self.cumul_green
+        metric['cumul_throughput'] = self.cumul_throughput
 
         ''' Estimated inflow by signal control model '''
         metric['estimated_inflow'] = self.estimated_inflow
@@ -1296,7 +1345,7 @@ class Expert(UpperAgents):
 
 class MFD_PI(UpperAgents):
     '''  PI based perimeter control with the use of MFD 
-         Reference: Keyven-Ekbatani et.al 2019      
+         Reference: Keyven-Ekbatani et al. 2019
     '''
 
     def __init__(self, tsc_peri, netdata, peridata: PeriSignals):
@@ -1304,12 +1353,13 @@ class MFD_PI(UpperAgents):
 
         # controller settings
         self.accu_crit = config['accu_critic']  # set-point for the controller
+        self.accu_crit_bound = config['accu_critic_bound']  # upper bound of the set-point
         self.K_p = config['K_p']  # proportional gains
         self.K_i = config['K_i']  # integral gains
 
         self.q_last = 0   # calculated network inflow (the action) of last step
         self.q_record = [] # record of actions
-        self.accu_last = 0
+        # self.accu_last = 0
 
         # the maximum inflow of the network each step (veh/s)
         self.q_max = config['network_maximal_inflow']
@@ -1322,22 +1372,23 @@ class MFD_PI(UpperAgents):
         '''
         # 1. get states
         accu = s[0] * config['accu_max']   # current accu (veh)
-        print(f'The Network has {accu} vehicles currently')
 
-        # 2.calculate control
-        a = self.q_last - self.K_p * \
-            (accu - self.accu_last) + self.K_i*(self.accu_crit-accu)
+        # 2.calculate optimal action and upper bound action
+        a = self.q_last - self.K_p * (accu - self.accu_last) + self.K_i*(self.accu_crit-accu)
+        a_sup = self.q_last - self.K_p * (accu - self.accu_last) + self.K_i*(self.accu_crit_bound-accu)
 
         # 3. inflow constraints
         a = min(a, self.q_max)
         a = max(a, self.q_min)
+        a_sup = min(a_sup, self.q_max)
+        a_sup = max(a_sup, self.q_min)
 
         # 4. update and record
         self.q_last = a  # update the inflow
         self.q_record.append(a)  # record the actions
         self.accu_last = accu  # update the accu
 
-        return a
+        return a, a_sup
 
     def save_weights(self, path):
         pass
