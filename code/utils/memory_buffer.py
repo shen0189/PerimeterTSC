@@ -132,7 +132,8 @@ class MemoryBuffer(object):
 
         ## plot
         if self.mode == 'Upper':
-            self.upper_buffer_plot(e)
+            pass
+            # self.upper_buffer_plot(e)
 
             # self.CA_plot(new_memory_number, penalty_list, e)
 
