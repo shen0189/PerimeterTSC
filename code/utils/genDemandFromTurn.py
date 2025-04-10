@@ -41,9 +41,12 @@ class TrafficGeneratorFromTurn:
                     if turn == 't':
                         continue    # skip the U-turn
                     if node[0] == 'I':  # internal node
-                        turn_prob = config['TurnRatio']['NodePN'][turn]
+                        turn_prob = config['TurnRatio']['EdgePN'][turn]
                     elif node[0] == 'P':    # perimeter node
-                        turn_prob = config['TurnRatio']['NodePeri'][turn]
+                        turn_prob = config['TurnRatio']['EdgePeri'][turn]
+                        # GridBufferFull1路网：对角落四个交叉口进行修正
+                        if config['network_version'] == 'GridBufferFull1' and node in config['Node']['NodeCorner']:
+                            turn_prob = config['TurnRatio']['EdgeCorner'][turn]
                     else:
                         raise ValueError(f"Node type not recognized: {node}")
                     self.turn_probability[(edge, to_edge)] = turn_prob
@@ -73,7 +76,7 @@ class TrafficGeneratorFromTurn:
             origin = demand_info['DemandType'].split('-')[0]
             scale = 0 if origin == 'PN' else config['scale']
             # allocate flow
-            for i in range(config['Demand_interval_number']):
+            for i in range(len(config['Demand_interval'])):
                 edge_flow = flow_allocation(demand_info['VolumeProfile'][i] * demand_info['multiplier'],
                                             demand_info['FromEdges'], scale=scale)
                 for edge, flow in edge_flow.items():
@@ -124,9 +127,12 @@ class TrafficGeneratorFromTurn:
                     config['singletype_tripfile_dir'] + f'{i+1}.trips.xml',
                     "--max-edges-factor",
                     str(config['max_edges_factor']),
+                    "--departlane",
+                    'best',
                     "--randomize-flows",
                     "--remove-loops",
                     "--repair",
+                    'True',
                     "--accept-all-destinations",
                     # disable console output
                     "--no-step-log",
@@ -159,12 +165,12 @@ class TrafficGeneratorFromTurn:
         
 
 
-def flow_allocation(total_flow: int, edge_list: list, scale: float = 0.):
+def flow_allocation(link_flow: int, edge_list: list, scale: float = 0.):
     """
     Allocate flow to each edge given the total flow
 
     Args:
-        total_flow (int): Total flow
+        link_flow (int): Flow on each link before allocation
         edge_list (list): List of edges
         scale (float): Alpha value for normal distribution
 
@@ -172,6 +178,7 @@ def flow_allocation(total_flow: int, edge_list: list, scale: float = 0.):
         flow_dict (dict): Dict of flow allocation
     """
     np.random.seed(47)
+    total_flow = link_flow * len(edge_list)
     while True:
         if config['demand_mode'] == 'MFD':
             random_value = np.zeros(len(edge_list))  # 无随机性
