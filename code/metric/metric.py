@@ -27,7 +27,7 @@ class Metric():
         self.info_length = int(control_interval/info_interval) + 1
         self.netdata = netdata
         self.peridata: PeriSignals = peridata
-        self.peri_controlled_links = sum([peri['gated_edge'] for peri in config['Peri_info'].values()], [])
+        self.peri_controlled_links = config['Edge_Peri']
         # self.peri_outflow_links = [peri['external_out_edges'] for peri in config['Peri_info'].values()]
         # self.peri_outflow_links = sum(self.peri_outflow_links, [])
         self.peri_outflow_links = config['Edge_Peri_out']
@@ -319,7 +319,7 @@ class Metric():
         df_PN = df[df['edge_id'].isin(config['Edge_PN'])]
         df_buffer = df[df['edge_id'].isin(self.edge_buffer)]
         df_peri = df[df['edge_id'].isin(self.peri_controlled_links)]
-        df_peri_out = df[df['edge_id'].isin(self.peri_outflow_links)]       # TODO: 对非单一出口道情况可能不适用
+        df_peri_out = df[df['edge_id'].isin(self.peri_outflow_links)]
 
         edge_data = {}
         ''' PN data'''
@@ -477,8 +477,6 @@ class Metric():
 
         # get base dataframe (two columns: interval and lane_id)
         lanes = list(self.peridata.peri_inflow_lanes_by_laneID.keys())
-        # lane_items = itertools.product(self.peri_controlled_links, range(0, 3))     # TODO: 从peridata获取
-        # lanes = [f'{edge}_{lane}' for edge, lane in lane_items]
         intervals = np.arange(0, config['max_steps'], 1, dtype=float)
         df_complete = pd.DataFrame(product(intervals, lanes), columns=['data_timestep', 'lane_id'])
 
@@ -525,6 +523,7 @@ class Metric():
         df['depart_edge'] = df['tripinfo_departLane'].str.split('_').str[0].astype(int)
         df['arrival_edge'] = df['tripinfo_arrivalLane'].str.split('_').str[0].astype(int)
         df['trip_type'] = df.apply(get_trip_type, axis=1)
+        df = df[df['trip_type'] != 'out-in']        # 处理jtrrouter生成out-in类型trip的bug
         # 计算真实trip time
         df['tripinfo_duration'] += df['tripinfo_departDelay']
 
@@ -569,6 +568,7 @@ def get_trip_type(edge):
             if edge['arrival_edge'] in config['Edge_Peri_out']:
                 return 'out-out'
             else:
+                print(f"depart: {edge['depart_edge']}, arrival: {edge['arrival_edge']}")
                 return 'out-in'
         else:
             if edge['arrival_edge'] in config['Edge_Peri_out']:
