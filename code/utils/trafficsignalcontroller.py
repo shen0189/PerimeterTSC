@@ -199,7 +199,7 @@ class TrafficSignalController:
                 halting_outlane_match = []
                 for out_lane in self.outgoing_lanes[in_lane]: # for all outlanes
                     halt_veh = traci.lane.getLastStepHaltingNumber(out_lane)
-                    # halt_veh = halt_veh/2 if halt_veh>=50 else 0      # why this processing?
+                    # halt_veh = _get_halting_vehicle(out_lane, 500)
                     halting_outlane_match.append(halt_veh)
 
                 ## take average
@@ -246,8 +246,6 @@ class TrafficSignalController:
             return np.vstack(np.zeros(len(self.incoming_lanes))[np.newaxis, :])
 
         # parameters
-        coef = 8
-        shape_coef = 400
         PN_density = self.PN_accu / config['PN_total_length']
         PN_critical_density = config['accu_critic'] / config['PN_total_length']
 
@@ -255,17 +253,33 @@ class TrafficSignalController:
         inlane_peri_weight = []
         for inlane_id in self.incoming_lanes:
             inlane = signal.in_lanes[inlane_id]
-            if inlane.type == 'inflow':
+            if 'inflow' in inlane.type:
                 hal_veh = traci.lane.getLastStepHaltingNumber(inlane_id)
-                sigmoid = 1 / (1 + np.exp(-hal_veh / shape_coef)) - 0.5
-                weight = coef * pow((PN_density - PN_critical_density), 2) * sigmoid * 1000
-                print(f'The weight on lane {inlane_id} is {weight}')
+                sigmoid = 1 / (1 + np.exp(-hal_veh / config['chi'])) - 0.5
+                weight = config['ksi'] * pow((PN_density - PN_critical_density), 2) * sigmoid * 1000
+                # print(f'The weight on lane {inlane_id} is {weight}')
             else:
                 weight = 0
             inlane_peri_weight.append(weight)
         peri_weight = np.vstack([inlane_peri_weight])
         return peri_weight
 
+# def _get_halting_vehicle(lane_id: str, lane_length: float) -> int:
+#     vehicle_ids = traci.lane.getLastStepVehicleIDs(lane_id)  # 获取该车道上的所有车辆
+#     stopped_vehicles = [
+#         (veh_id, traci.vehicle.getLanePosition(veh_id))
+#         for veh_id in vehicle_ids if traci.vehicle.getSpeed(veh_id) < 0.1
+#     ]
+#     stopped_vehicles = [(veh_id, pos) for veh_id, pos in stopped_vehicles if pos > 10]
+#
+#     if not stopped_vehicles:
+#         return 0
+#
+#     # 找到最大位置的车辆
+#     _, queue_end_pos = min(stopped_vehicles, key=lambda x: x[1])
+#     halting_number = int((lane_length - queue_end_pos) / config['vehicle_length'])
+#
+#     return halting_number
 
 if False:
     def run(self):
