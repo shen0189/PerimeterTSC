@@ -7,27 +7,17 @@ import copy
 from typing import Dict, List, Union, Tuple
 
 
-class DownstreamLink:
+class DownstreamLane:
 
-    def __init__(self, tls_id: str, link_id: str):
-        self.id = link_id
+    def __init__(self, tls_id: str, lane_id: str):
+        self.id = lane_id
         self.signal = tls_id
-        self.total_capacity = 0
-        self.queue = 0
+        self.length = 0
+        self.last_halt_position = 1e5     # position of the last halting vehicle along the lane
         self.remain_capacity = 0
 
-    def set_total_capacity(self, capacity: int):
-        self.total_capacity = capacity
-
-    def add_capacity(self, capacity: int):
-        self.total_capacity += capacity
-
-    def update_state(self, queue: int):
-        self.queue = queue
-        self.remain_capacity = self.total_capacity - self.queue
-
-    def get_remain_capacity(self):
-        return self.remain_capacity
+    def update_remain_capacity(self):
+        self.remain_capacity = int(self.last_halt_position / config['vehicle_length'])
 
 
 class Movement:
@@ -40,7 +30,6 @@ class Movement:
         self.type = movement_type   # inflow / outflow / normal flow
         self.lanes: Dict[str, Lane] = {}
         self.connections: Dict[str, Connection] = {}
-        self.down_link: DownstreamLink = None
         self.stages: List[str] = []
 
         self.flow_rate = 0
@@ -95,35 +84,38 @@ class Connection:
 class Lane:
 
     def __init__(self, lane_id: str, edge: str, tls_id: str):
+        # [topology elements]
         self.id = lane_id
         self.edge = edge
         self.signal = tls_id
         self.direction = []
         self.movements: Dict[str, Movement] = {}
-
+        self.downstream_lanes: Dict[str, DownstreamLane] = {}
+        self.downstream_edges: List = []
+        self.type = ''
+        # [traffic parameters]
         self.length = 0
         self.capacity = 0
         self.saturation_flow_rate = 0
         self.vehicle_length = 0  # average vehicle length
         self.saturation_limit = 0
-
-        self.arrival_vehicle = 0    # number of vehicle entered within the last interval
+        # [model parameters]
         self.arrival_rate = 0
-        self.queue = 0      # number of vehicle at the end of the interval
-        self.laststep_vehicles = []     # vehicles on the lane **within the recorded area** at the last step
-        self.queueing_vehicles = []     # vehicles that have already joined the queue
-        self.entered_vehicles = []      # newly entered vehicles **in the recorded area** in the last interval
+        self.entered_vehicles = set()  # newly entered vehicles **in the recorded area** in the last interval
+        self.queue = 0      # number of vehicle at the end of the interval (used for optimization model)
+        self.queueing_vehicles = set()  # vehicles that have already joined the queue **on the lane**
+        self.last_interval_max_halting_number = 0   # the maximum number of halting vehicles (derived by traci) in the last interval (used for critical point update)
+        self.this_interval_max_halting_number = 0   # the maximum number of halting vehicles in the current interval
+        self.last_halt_position = 0     # distance to the stop lane of the halting vehicle at the end of the queue (used for downstream capacity)
+        self.virtual_queue_vehicles = set()    # vehicles waiting for joining the queue on adjacent lanes
         self.outflow_vehicle_num = 0    # number of vehicles passing the stop line (derived by induction loops)
-
+        self.estimate_throughput = 0  # the estimated throughput of the last interval (dervied from model)
+        # [timing variables and parameters]
         self.green_start: list = [0]
         self.green_duration: list = [0]
         self.min_green = 0
         self.max_green = 0
         self.yellow_duration = 0
-
-    def add_direction(self, direction: str):
-        if direction not in self.direction:
-            self.direction.append(str)
 
     def set_length(self, length: float):
         self.length = length
@@ -133,22 +125,11 @@ class Lane:
 
     def update_traffic_state(self):
         self.arrival_rate = len(self.entered_vehicles) / config['updatestep']
-        self.queue = len(self.queueing_vehicles)
-        self.entered_vehicles = []
-        self.outflow_vehicle_num = 0
-
-
-    def set_vehicle_length(self, vehicle_length: float):
-        self.vehicle_length = vehicle_length
+        self.queue = len(self.queueing_vehicles) + len(self.virtual_queue_vehicles)
 
     def get_downstream_capacity(self):
-        min_cap_movement, capacity = '', 1e7
-        for movement_id, movement in self.movements.items():
-            down_link = movement.down_link
-            down_link_capacity = down_link.get_remain_capacity()
-            if down_link_capacity < capacity:
-                min_cap_movement = movement_id
-                capacity = down_link_capacity
+        capacity = np.min([lane.remain_capacity for lane in self.downstream_lanes.values()])
+        # capacity = max(capacity, self.min_green * self.saturation_flow_rate)
         return capacity
 
 
@@ -161,7 +142,7 @@ class LaneGroup:
         # [topology elements]
         self.id = group_id
         self.signal = tls_id
-        self.type = None    # inflow / outflow / normal flow
+        self.type = None    # inflow / outflow / normal flow / combined
         self.movements: Dict[str, Movement] = {}
         self.lanes: Dict[str, Lane] = {}
         # [traffic parameters]
@@ -175,12 +156,14 @@ class LaneGroup:
         self.saturation_limit = 0
         # [model parameters]
         self.optimal_inflow = 0         # 上层模型优化结果, veh/s
+        self.this_interval_max_halting_number = 0
+        self.last_interval_max_halting_number = 0
+        self.critical_queue_ratio = 0
         self.queue_pressure_coef = 0
         self.critical_queue_vehicle = 0
         self.target_queue_vehicle = 0
         self.target_inflow = 0        # veh/s
-        self.estimate_throughput = 0        # the estimated throughput of the last interval (from model)
-        self.real_throughput = 0            # the real throughput of the last interval (from simulation)
+        self.estimate_throughput = 0
         # [timing variables and parameters]
         self.green_start: list = [0]
         self.green_duration: list = [0]
@@ -198,32 +181,88 @@ class LaneGroup:
             return next(k for k in self.movements if k[-1] == 's')
 
     def get_downstream_capacity(self):
-        min_cap_movement, capacity = '', 1e7
-        for movement_id, movement in self.movements.items():
-            down_link = movement.down_link
-            down_link_capacity = down_link.get_remain_capacity()
-            if down_link_capacity < capacity:
-                capacity = down_link_capacity
+        capacity = min([lane.get_downstream_capacity() for lane in self.lanes.values()]) * len(self.lanes)
+        # capacity = sum([lane.get_downstream_capacity() for lane in self.lanes.values()])
         return capacity
+
+    def update_traffic_state(self):
+        self.arrival_rate = sum([lane.arrival_rate for lane in self.lanes.values()])
+        self.total_queue = sum([lane.queue for lane in self.lanes.values()])
+        self.this_interval_max_halting_number = np.mean([lane.this_interval_max_halting_number for lane in self.lanes.values()])
+        for lane in self.lanes.values():
+            lane.arrival_rate = self.arrival_rate / len(self.lanes)
 
     def update_target_state(self, cycle):
         """
-        Update the target state before
+        Update the target state before updating the queue coefficient
         """
-        self.target_inflow = max(self.total_queue / cycle + self.arrival_rate - self.critical_queue_vehicle / cycle,
-                                 self.min_inflow)
-        self.target_queue_vehicle = max(self.total_queue + self.arrival_rate * cycle - self.target_inflow * cycle, 1)
+        # 2025.3.30更新: 在排队消散期间动态调节critical state
+        if self.this_interval_max_halting_number >= self.last_interval_max_halting_number:
+            # 排队蔓延: 将目标状态设为防溢流状态即可
+            self.critical_queue_ratio = config['spillover_critical_ratio']
+        else:
+            # 排队消散: 当优化时刻的排队与之前的critical state接近或更短, 则减小critical queue ratio
+            if self.total_queue <= self.critical_queue_ratio * self.total_capacity * 1.1:
+                # decrease_ratio = self.this_interval_max_halting_number / self.last_interval_max_halting_number
+                decrease_ratio = 0.5
+                self.critical_queue_ratio = self.critical_queue_ratio * decrease_ratio
+                # self.critical_queue_ratio = 0 if self.critical_queue_ratio < 0.05 else self.critical_queue_ratio
 
+        # 更新目标排队车辆和inflow
+        self.critical_queue_vehicle = self.total_capacity * self.critical_queue_ratio
+        self.target_inflow = min(self.max_inflow,
+                                 self.get_downstream_capacity() / cycle,
+                                 self.total_queue / cycle + self.arrival_rate,
+                                 max(self.min_inflow,
+                                     self.total_queue / cycle + self.arrival_rate - self.critical_queue_vehicle / cycle
+                                     )
+                                 )
+        assert self.target_inflow >= 0
+        self.target_queue_vehicle = self.total_queue + self.arrival_rate * cycle - self.target_inflow * cycle
+        assert self.target_queue_vehicle >= 0
+        if self.target_queue_vehicle == 0:
+            self.target_queue_vehicle = 1
 
-    def update_queue_coef(self, control_mode, optimal_inflow, target_inflows, cycle):
+    def update_queue_coef(self, control_mode, target_gap, cycle):
         if control_mode == 'PI-Balance':
-            if sum(target_inflows) <= optimal_inflow:
+            if target_gap <= 0.001:
                 self.queue_pressure_coef = self.target_queue_vehicle / config['M']
             else:
-                # print(f'Balance mode activate for lanegroup {self.id}')
-                self.queue_pressure_coef = (sum(target_inflows) - optimal_inflow) * self.target_queue_vehicle / cycle
+                # 2025.3.30更新: 动态调节critical point (target_queue_vehicle)
+                self.queue_pressure_coef = target_gap * self.target_queue_vehicle / cycle
         elif control_mode in ['PI-Cordon', 'PI']:
-            self.queue_pressure_coef = 1 / config['M']
+            self.queue_pressure_coef = self.target_queue_vehicle / config['M']
+
+    def check_target_state_reached(self, cycle):
+        '''
+        called after the upper problem solved, with the total inflow larger than metering rate but not reaching the bound
+        '''
+        estimate_queue_vehicle = self.total_queue + cycle * self.arrival_rate - cycle * self.optimal_inflow
+        if abs(self.target_queue_vehicle - estimate_queue_vehicle) <= 3:
+            print(f'Lanegroup {self.id} will reach the target state of {self.target_queue_vehicle} vehs. ')
+        else:
+            print(f'Lanegroup {self.id} targets at {self.target_queue_vehicle} vehs, while actually reach {estimate_queue_vehicle} vehs. ')
+
+    def check_optimal_inflow_implemented(self, cycle):
+        '''
+        called after the lower problem solved
+        Note: might not be satisfied when the queues on each lane in the lane-group are imbalanced
+        '''
+        lower_throughput = sum([lane.estimate_throughput for lane in self.lanes.values()])
+        if abs(self.optimal_inflow * cycle - lower_throughput) <= 5:
+            print(f'The signal time plan satisfies the inflow requirements of {lower_throughput} vehs on lanegroup {self.id}. ')
+        else:
+            print(f'Lanegroup {self.id} requires {self.optimal_inflow * cycle} vehs, while the signal plan discharges {lower_throughput} vehs. ')
+
+    def check_queue_balance(self, cycle):
+        '''
+        called after the upper problem solver, with the total inflow equal to metering rate or the bound
+        '''
+        nextstep_queue = self.total_queue + cycle * self.arrival_rate - cycle * self.optimal_inflow
+        relative_queue = nextstep_queue / self.target_queue_vehicle
+        discharge_vehicle = cycle * self.optimal_inflow
+        print(f'Lanegroup {self.id}: relative queue length {relative_queue}, {discharge_vehicle} vehs to be discharged. ')
+
 
 class Intersection:
 
@@ -231,11 +270,11 @@ class Intersection:
         self.id = tls_id
         self.in_edges: List[str] = []
         self.in_lanes: Dict[str, Lane] = {}
+        self.out_lanes: Dict[str, DownstreamLane] = {}
         self.movements: Dict[str, Movement] = {}
         self.connections: Dict[str, Connection] = {}
         self.lane_groups: Dict[str, LaneGroup] = {}
         self.conflict_matrix = {}
-        self.downLinks: Dict[str, DownstreamLink] = {}
         self.cycle = 0
 
         # Slot-based parameters
@@ -258,43 +297,59 @@ class Intersection:
         if new_edge not in self.in_edges:
             self.in_edges.append(new_edge)
 
-    def add_lane(self, new_lane: Lane):
+    def add_inlane(self, new_lane: Lane, direction: str):
         if new_lane.id not in self.in_lanes:
             self.in_lanes[new_lane.id] = new_lane
+        self.in_lanes[new_lane.id].direction.append(direction)
+
+    def add_outlane(self, new_lane: DownstreamLane):
+        if new_lane.id not in self.out_lanes:
+            self.out_lanes[new_lane.id] = new_lane
 
     def add_lane_group(self, new_lane_group: LaneGroup):
         if new_lane_group.id not in self.lane_groups:
             self.lane_groups[new_lane_group.id] = new_lane_group
-
-    def add_downstream_link(self, new_downstream_link: DownstreamLink):
-        if new_downstream_link.id not in self.downLinks:
-            self.downLinks[new_downstream_link.id] = new_downstream_link
 
     def set_conflict(self, mov1_id, mov2_id):
         self.conflict_matrix[mov1_id][mov2_id] = 1
         self.conflict_matrix[mov2_id][mov1_id] = 1
 
     def combine_elements(self, new_lane: Lane, new_movement: Movement,
-                         new_connection: Connection, new_downlink: DownstreamLink):
+                         new_connection: Connection, new_downlane: DownstreamLane):
         new_lane_id, new_movement_id = new_lane.id, new_movement.id
-        new_connection_id, new_downlink_id = new_connection.id, new_downlink.id
+        new_connection_id, new_downlane_id = new_connection.id, new_downlane.id
         self.in_lanes[new_lane_id].movements[new_movement_id] = self.movements[new_movement_id]
+        self.in_lanes[new_lane_id].downstream_lanes[new_downlane_id] = self.out_lanes[new_downlane_id]
         self.movements[new_movement_id].lanes[new_lane_id] = self.in_lanes[new_lane_id]
         self.connections[new_connection_id].movement = self.movements[new_movement_id]
-        self.movements[new_movement_id].down_link = self.downLinks[new_downlink_id]
 
-    def reset_signal_settings(self):
+    def reset(self):
+        # [lane measurements]
         for lane in self.in_lanes.values():
-            lane.green_start = []
-            lane.green_duration = []
+            lane.entered_vehicles.clear()
+            lane.outflow_vehicle_num = 0
+            lane.estimate_throughput = 0
+            lane.last_interval_max_halting_number = lane.this_interval_max_halting_number
+            lane.this_interval_max_halting_number = 0
+        for lane in self.out_lanes.values():
+            lane.last_halt_position = lane.length
+        for lane_group in self.lane_groups.values():
+            lane_group.last_interval_max_halting_number = lane_group.this_interval_max_halting_number
+            lane_group.this_interval_max_halting_number = 0
+            lane_group.estimate_throughput = 0
+
+        # [signal settings]
+        for lane in self.in_lanes.values():
+            lane.green_start = [0]
+            lane.green_duration = [0]
         for movement in self.movements.values():
-            movement.green_start = []
-            movement.green_duration = []
-            movement.yellow_start = []
+            movement.green_start = [0]
+            movement.green_duration = [0]
+            movement.yellow_start = [0]
         for connection in self.connections.values():
-            connection.green_start = []
-            connection.green_duration = []
-            connection.yellow_start = []
+            connection.green_start = [0]
+            connection.green_duration = [0]
+            connection.yellow_start = [0]
 
 
 class PeriSignals:
@@ -308,7 +363,6 @@ class PeriSignals:
         self.peri_lane_groups: Dict[str, LaneGroup] = {}     # 仅受控方向
         self.peri_inflow_lanes_by_laneID: Dict[str, Lane] = {}      # 仅受控方向
         self.peri_inflow_lanes: List[tuple] = []    # 仅受控方向
-        self.peri_downstream_links: Dict[str, DownstreamLink] = {}
         self.netfile = net_fp
         self.sumo_cmd = sumo_cmd
         self.phase_mode = config['peri_signal_phase_mode']
@@ -335,14 +389,14 @@ class PeriSignals:
                         connection_dir = 'l'  # treat turn-about as left-turn
                     # Add edges
                     peri_signal.add_edge(from_edge)
-                    # Add downstream links
-                    new_downstream_link = DownstreamLink(tls_id=tls_id, link_id=to_edge)
-                    peri_signal.add_downstream_link(new_downstream_link)
-                    # Add lanes
+                    # Add outcoming lanes
+                    to_lane_id = '_'.join((to_edge, to_lane_num))
+                    new_downstream_lane = DownstreamLane(tls_id=tls_id, lane_id=to_lane_id)
+                    peri_signal.add_outlane(new_downstream_lane)
+                    # Add incoming lanes
                     from_lane_id = from_edge + '_' + from_lane_num
-                    new_lane = Lane(from_lane_id, from_edge, tls_id)
-                    new_lane.add_direction(connection_dir)
-                    peri_signal.add_lane(new_lane)
+                    new_income_lane = Lane(from_lane_id, from_edge, tls_id)
+                    peri_signal.add_inlane(new_income_lane, connection_dir)
                     # Add movements
                     if config['network'] == 'FullGrid':
                         if int(from_edge) > 100 and int(to_edge) < 100:
@@ -368,10 +422,16 @@ class PeriSignals:
                                                 to_lane=to_lane_id, direction=connection_dir)
                     peri_signal.add_connection(new_connection)
                     # Add the lane/movement to the movement/lane (must add the new lane/movement/connection first)
-                    peri_signal.combine_elements(new_lane=new_lane,
+                    peri_signal.combine_elements(new_lane=new_income_lane,
                                                  new_movement=new_movement,
                                                  new_connection=new_connection,
-                                                 new_downlink=new_downstream_link)
+                                                 new_downlane=new_downstream_lane)
+
+        # Add necessary attributes
+        for signal_id, signal in self.peri_signals.items():
+            for lane_id, lane in signal.in_lanes.items():
+                lane.type = '-'.join(set(mov.type for mov in lane.movements.values()))
+                lane.downstream_edges = [down_lane.split('_')[0] for down_lane in lane.downstream_lanes]
 
         # Add stages for slot-based control
         if self.phase_mode == 'Slot':
@@ -385,8 +445,6 @@ class PeriSignals:
 
         # Add basic information of inflow movement
         for peri_signal_id, peri_signal in self.peri_signals.items():
-            for downstream_link_id, downstream_link in peri_signal.downLinks.items():
-                self.peri_downstream_links[downstream_link_id] = downstream_link
             for movement_id, movement in peri_signal.movements.items():
                 if movement.type == 'inflow':
                     self.peri_inflows[movement_id] = movement
@@ -399,7 +457,6 @@ class PeriSignals:
         edges = root.findall('edge')
         for edge in edges:
             if edge.attrib['id'][0] != ':':
-                edge_id = edge.attrib['id']
                 lanes = edge.findall('lane')
                 for lane in lanes:
                     lane_id = lane.attrib['id']
@@ -410,8 +467,8 @@ class PeriSignals:
                             peri_signal.in_lanes[lane_id].set_length(lane_length)
                             peri_signal.in_lanes[lane_id].set_capacity(lane_capacity)
                             peri_signal.in_lanes[lane_id].vehicle_length = config['vehicle_length']
-                    if edge_id in self.peri_downstream_links:
-                        self.peri_downstream_links[edge.attrib['id']].add_capacity(lane_capacity)
+                        if lane_id in peri_signal.out_lanes:
+                            peri_signal.out_lanes[lane_id].length = lane_length
 
         # Add timing parameters
         for peri_signal in self.peri_signals.values():
@@ -459,10 +516,32 @@ class PeriSignals:
                 edge_info = {'south': max(edge_ns), 'north': min(edge_ns), 'west': min(edge_ew), 'east': max(edge_ew)}
             # Add each lane group
             for idx, (in_edge_loc, move_dir) in config['lane_group_info'].items():
-                group_id = '_'.join((tls_id, str(idx)))
-                new_lane_group = LaneGroup(group_id=group_id, tls_id=tls_id)
                 if move_dir == 'l':
-                    lane_id = '_'.join((str(edge_info[in_edge_loc]), '2'))
+                    lane_idx_list = [2]
+                    if config['network_version'] == 'GridBufferFull1':
+                        if tls_id in ['P15', 'P51'] and in_edge_loc in ['west', 'east']:
+                            lane_idx_list = []
+                        elif tls_id in ['P11', 'P55'] and in_edge_loc in ['north', 'south']:
+                            lane_idx_list = []
+                elif move_dir == 's':
+                    lane_idx_list = [0, 1]
+                    if config['network_version'] == 'GridBufferFull1':
+                        if tls_id in ['P15', 'P51'] and in_edge_loc in ['west', 'east']:
+                            lane_idx_list = [0, 1, 2]
+                        elif tls_id in ['P11', 'P55'] and in_edge_loc in ['north', 'south']:
+                            lane_idx_list = [0, 1, 2]
+                else:
+                    raise ValueError('Invalid movement direction')
+
+                group_id = '_'.join((tls_id, str(idx)))
+                if len(lane_idx_list) == 0:
+                    new_lane_group = LaneGroup(group_id=group_id, tls_id=tls_id)
+                    new_lane_group.type = 'virtual'
+                    continue
+
+                new_lane_group = LaneGroup(group_id=group_id, tls_id=tls_id)
+                for lane_idx in lane_idx_list:
+                    lane_id = '_'.join((str(edge_info[in_edge_loc]), str(lane_idx)))
                     lane = self.peri_signals[tls_id].in_lanes[lane_id]
                     new_lane_group.lanes[lane_id] = lane
                     for movement_id, movement in lane.movements.items():
@@ -470,36 +549,9 @@ class PeriSignals:
                             new_lane_group.movements[movement_id] = movement
                             if new_lane_group.type is None:
                                 new_lane_group.type = movement.type
-                elif move_dir == 's':
-                    for idx in range(2):
-                        lane_id = '_'.join((str(edge_info[in_edge_loc]), str(idx)))
-                        lane = self.peri_signals[tls_id].in_lanes[lane_id]
-                        new_lane_group.lanes[lane_id] = lane
-                        for movement_id, movement in lane.movements.items():
-                            if movement_id not in new_lane_group.movements:
-                                new_lane_group.movements[movement_id] = movement
-                                if new_lane_group.type is None:
+                            else:   # 直行右转车道组
+                                if movement.dir == 's':
                                     new_lane_group.type = movement.type
-                                else:   # 直行+右转车道组, 取直行车道组的类型
-                                    if movement.dir == 's':
-                                        new_lane_group.type = movement.type
-
-            # # for GridBuffer network
-            # inflow_edge_id = str(tls_info['edge'])
-            # lane_group_list = tls_info['inflow_lane_groups']
-            # current_lane_index = 0      # 当前要加入车道组的车道
-            # for group_id, lane_num in enumerate(lane_group_list):
-            #     group_id = '_'.join((inflow_edge_id, str(group_id)))
-            #     new_lane_group = LaneGroup(group_id=group_id, tls_id=tls_id)
-            #     # Add lanes and movements
-            #     for i in range(lane_num):
-            #         lane_id = '_'.join((inflow_edge_id, str(current_lane_index + i)))
-            #         lane = self.peri_signals[tls_id].in_lanes[lane_id]
-            #         new_lane_group.lanes[lane_id] = lane
-            #         for movement_id, movement in lane.movements.items():
-            #             if movement_id not in new_lane_group.movements:
-            #                 new_lane_group.movements[movement_id] = movement
-            #     current_lane_index += lane_num
 
                 # Add parameters for the lane group
                 new_lane_group.length = np.mean([lane.length for lane in new_lane_group.lanes.values()])
@@ -516,11 +568,10 @@ class PeriSignals:
                     [lane.saturation_flow_rate for lane in new_lane_group.lanes.values()])
                 new_lane_group.vehicle_length = config['vehicle_length']
                 new_lane_group.throughput_upperbound = new_lane_group.max_green * new_lane_group.saturation_flow_rate
-                new_lane_group.critical_queue_vehicle = new_lane_group.total_capacity * config['spillover_critical_ratio']
-                # new_lane_group.queue_pressure_coef = 1 / (
-                #             2 * new_lane_group.total_capacity * config['spillover_critical_ratio'])
+                new_lane_group.critical_queue_ratio = config['spillover_critical_ratio']
+                # new_lane_group.critical_queue_vehicle = new_lane_group.total_capacity * config['spillover_critical_ratio']
                 self.peri_signals[tls_id].add_lane_group(new_lane_group)
-                if new_lane_group.type == 'inflow':
+                if 'inflow' in new_lane_group.type:
                     self.peri_lane_groups[group_id] = new_lane_group
 
         # Update perimeter info for config file
@@ -578,6 +629,10 @@ class PeriSignals:
                             peri_signal.set_conflict(movement_id, conflict_movement_id)
 
         traci.close()
+
+    def set_normalized_coef(self):
+        for lane_group in self.peri_lane_groups.values():
+            lane_group.queue_pressure_coef = lane_group.target_queue_vehicle / config['M']
 
     def check_conflict_matrix(self):
 
@@ -654,3 +709,70 @@ class PeriSignals:
                     print(f'Movement {movement_id} green starts at {green_start} and ends at {green_end}.')
             else:
                 print('To be implemented')
+
+    def print_green_time(self, signal_list: list = None):
+        if signal_list is None:
+            signal_list = list(self.peri_signals)
+        for signal_id in signal_list:
+            signal = self.peri_signals[signal_id]
+            print(f'Signal {signal_id}: ')
+            for lanegroup_id, lanegroup in signal.lane_groups.items():
+                # print(f'Queue length of lane group {lanegroup_id}: {lanegroup.total_queue} veh. ')
+                # print(f'Inflow of lane group {lanegroup_id}: {lanegroup.arrival_rate} veh/s. ')
+                if isinstance(lanegroup.green_duration, list):
+                    print(f'Green duration of lane group {lanegroup_id}: {lanegroup.green_duration[0]}s. ')
+                else:
+                    print(f'Green duration of lane group {lanegroup_id}: {lanegroup.green_duration}s. ')
+
+    def reset_green_time(self):
+        '''
+        Used for MP algorithm: reset the green duration at the start of the new interval
+        '''
+        for signal_id, signal in self.peri_signals.items():
+            for lanegroup_id, lanegroup in signal.lane_groups.items():
+                lanegroup.green_duration = [0]
+
+    def update_green_from_phase_index(self, signal_id, phase_num: int, green_time: int):
+        '''
+        Used for MP algorithm: update the green time according to the given SIGNAL dict
+        '''
+        signal = self.peri_signals[signal_id]
+        if phase_num == 0:
+            if config['network_version'] == 'GridBufferFull1' and signal_id in ['P11', 'P55']:
+                discharge_lanegroup = [8]
+            else:
+                discharge_lanegroup = [3, 8]
+        elif phase_num == 1:
+            if config['network_version'] == 'GridBufferFull1' and signal_id in ['P15', 'P51']:
+                discharge_lanegroup = [2]
+            else:
+                discharge_lanegroup = [2, 5]
+        elif phase_num == 2:
+            if config['network_version'] == 'GridBufferFull1' and signal_id in ['P15', 'P51']:
+                discharge_lanegroup = [6]
+            else:
+                discharge_lanegroup = [1, 6]
+        elif phase_num == 3:
+            if config['network_version'] == 'GridBufferFull1' and signal_id in ['P11', 'P55']:
+                discharge_lanegroup = [4]
+            else:
+                discharge_lanegroup = [4, 7]
+        elif phase_num == 4:
+            discharge_lanegroup = [4, 8]
+        elif phase_num == 5:
+            discharge_lanegroup = [2, 6]
+        elif phase_num == 6:
+            if config['network_version'] == 'GridBufferFull1' and signal_id in ['P11', 'P55']:
+                discharge_lanegroup = [1, 5]
+            else:
+                discharge_lanegroup = [3, 7]
+        elif phase_num == 7:
+            discharge_lanegroup = [1, 5]
+        else:
+            raise NotImplementedError
+        for lane_group_idx in discharge_lanegroup:
+            lane_group = signal.lane_groups[signal_id + '_' + str(lane_group_idx)]
+            lane_group.green_duration[0] += green_time
+            for lane_id, lane in lane_group.lanes.items():
+                lane.green_duration[0] += green_time
+
