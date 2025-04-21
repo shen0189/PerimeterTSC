@@ -445,8 +445,9 @@ sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_step
 # initialize perimeter signals
 peridata = PeriSignals(config['netfile_dir'], sumo_cmd)
 peridata.get_basic_inform()
-peridata.get_conflict_matrix()
-# peridata.check_conflict_matrix()
+if config['upper_mode'] in ['PI'] and config['peri_signal_phase_mode'] in ['Unfixed']:
+    peridata.get_conflict_matrix()
+    # peridata.check_conflict_matrix()
 
 nd = NetworkData(config['netfile_dir'], sumo_cmd, peridata)
 netdata = nd.get_net_data()
