@@ -273,8 +273,8 @@ class UpperAgents:
             else:
                 (self.a, a_sup), is_expert = self.get_action_all(self.old_state)
                 a = self.a
-                a_veh = a * config['cycle_time']
-                print("Inflow vehicle number given by PI controller: ", a_veh)
+                a_veh, a_sup_veh = a * config['cycle_time'], a_sup * config['cycle_time']
+                print(f"Optimal inflow vehicle: {a_veh}, upper bound: {a_sup_veh}")
                 self.ordered_action.append(a)
                 estimate_inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a,
                                                                      action_bound=a_sup)
