@@ -2,7 +2,8 @@ import traci
 import numpy as np
 from utils.utilize import config
 from peritsc.perimeterdata import PeriSignals
-from peritsc.signal_controller import PeriSignalController, TimeSlotPeriSignalController
+from peritsc.signal_controller import PeriSignalController
+from peritsc.timeslot_controller import TimeSlotPeriSignalController
 from peritsc.webster_controller import WebsterController
 from typing import Dict
 
@@ -14,9 +15,8 @@ class Peri_Agent():
         # control mode
         self.distribution_mode = config['peri_control_mode']
         self.signal_phase_mode = config['peri_signal_phase_mode']
-        self.optimization_mode = config['peri_optimization_mode']
 
-        # status for static mode
+        # status
         self.switch_to_normal_plan = False
 
         # signal constraints
@@ -118,7 +118,7 @@ class Peri_Agent():
         return green_time, red_time
         # print(f"action of greentime :{green_time}")
 
-    def get_full_greensplit(self, peri_mode: str, action: float = 0.0):
+    def get_full_greensplit(self, peri_mode: str, action: float = 0.0, action_bound: float = 0.0):
         """
         distribute the vehicles on perimeter nodes with green split
 
@@ -131,28 +131,23 @@ class Peri_Agent():
         for signal_id, signal in self.peridata.peri_signals.items():
             for lane_id, lane in signal.in_lanes.items():
                 lane.update_traffic_state()
-            for movement_id, movement in signal.movements.items():
-                downlink_id = movement.down_link.id
-                queue = traci.edge.getLastStepHaltingNumber(downlink_id)
-                signal.downLinks[downlink_id].update_state(queue)
+            for lane_id, lane in signal.out_lanes.items():
+                lane.update_remain_capacity()
 
         # 2. Aggregate the parameters to each lane-group
-        # FullGrid
         for signal_id, signal in self.peridata.peri_signals.items():
             for lane_group_id, lane_group in signal.lane_groups.items():
-                lane_group.total_queue = sum([lane.queue for lane in lane_group.lanes.values()])
-                lane_group.arrival_rate = sum([lane.arrival_rate for lane in lane_group.lanes.values()])
-                for lane_id, lane in lane_group.lanes.items():
-                    lane.arrival_rate = lane_group.arrival_rate / len(lane_group.lanes)
+                lane_group.update_traffic_state()
 
-        # 3. Update the target state and the queue coefficient for each lane group (for PI controller)
+        # 3. Update the target state and the queue coefficient for each lane group (for PI upper mode)
         if peri_mode == 'PI':
             for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
                 inflow_lanegroup.update_target_state(self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
             target_inflow_list = [lg.target_inflow for lg in self.peridata.peri_lane_groups.values()]
+            target_optimal_diff = sum(target_inflow_list) - action
             for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
                 inflow_lanegroup.update_queue_coef(control_mode=self.distribution_mode,
-                                                   optimal_inflow=action, target_inflows=target_inflow_list,
+                                                   target_gap=target_optimal_diff,
                                                    cycle=self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
 
         # 4. Optimize the signal plan of all perimeter intersections
@@ -162,7 +157,7 @@ class Peri_Agent():
             if self.signal_phase_mode == 'Slot':
                 controller = TimeSlotPeriSignalController(self.peridata, action, self.slot_num)
             else:
-                controller = PeriSignalController(self.peridata, action)
+                controller = PeriSignalController(self.peridata, action, action_bound)
         estimate_inflow = controller.signal_optimize()
 
         # 5. record green time data
@@ -172,19 +167,6 @@ class Peri_Agent():
                                      [-1, len(inflow_movement_green_time)])
 
         return estimate_inflow
-
-    # def set_program(self, green_time, red_time):
-    #     for peri_id, peri in dict.items(self.info):
-    #         tsc = peri['tsc']
-    #         logic = tsc.logic
-    #
-    #         ## set green and red time
-    #         logic.phases[tsc.green_phase_index].duration = green_time[peri_id]
-    #         logic.phases[tsc.red_phase_index].duration = red_time[peri_id]
-    #
-    #         ## set program
-    #         traci.trafficlight.setProgramLogic(peri_id, logic) # set the new program
-    #         # print(traci.trafficlight.getAllProgramLogics(peri_id))
 
     def set_full_program(self):
 
@@ -202,7 +184,7 @@ class Peri_Agent():
             #     logic.programID = '1'
             logic.phases = tuple(phases)
             traci.trafficlight.setProgramLogic(signal_id, logic)
-            # traci.trafficlight.setProgram(signal_id, logic.programID)
+            traci.trafficlight.setProgram(signal_id, logic.programID)
             traci.trafficlight.setPhase(signal_id, 0)
 
     def set_normal_program_for_static(self):
@@ -308,13 +290,11 @@ class Peri_Agent():
         '''
         check the abnormal performance on lanes at perimeter intersections, according to
         the estimated throughput and real throughput. Possible reasons:
-            1) downstream link spillover
-            2) vehicles waiting for changing lanes
+            1) vehicles waiting for changing lanes block the normal flow
+            2) under-estimation of the real last-halting position of the downstream lane
         '''
         for signal_id, signal in self.peridata.peri_signals.items():
-            for lanegroup_id, lanegroup in signal.lane_groups.items():
-                if lanegroup.real_throughput - lanegroup.estimate_throughput < -10:
-                    print(f'The green time is wasted at signal {signal_id}, lane group {lanegroup_id}')
-                    print(f'Estimated throughput: {lanegroup.estimate_throughput}, actual throughput: {lanegroup.real_throughput}')
-                    #
-
+            for lane_id, lane in signal.in_lanes.items():
+                if lane.outflow_vehicle_num - lane.estimate_throughput < -10:
+                    print(f'The green time is wasted at signal {signal_id}, lane {lane_id}')
+                    print(f'Estimated throughput: {lane.estimate_throughput}, actual throughput: {lane.outflow_vehicle_num}')
