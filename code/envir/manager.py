@@ -30,6 +30,7 @@ class Trainer():
         self.info_interval = self.config['infostep']
         self.cycle_time = self.config['cycle_time']
         self.lower_mode = config['lower_mode']
+        self.lower_extend_flag = False
         self.mode = config['mode']
         self.record_fields = {}     # used for plot and save
 
@@ -121,17 +122,17 @@ class Trainer():
             print('\t' * (self.cur_epis % self.n_jobs) * 3 + f"{self.cur_epis + 1} current step: {step}", end='\r')
 
             ## 3.2 get action
-            self.get_actions(step)
+            self.get_actions(step)      # 获取上层和下层控制方案
 
             ## 3.3 simulation of one control interval
-            step, done, _, _ = self.env.simu_run(step)
+            step, done, _, _ = self.env.simu_run(step)      # 运行一个下层interval
 
             ## 3.4 upper metric update
             if step % self.info_interval == 0:
                 self.agent_upper.get_metric_each_interval()
 
             ## 3.5 memory
-            done = self.memorize(step, done)
+            done = self.memorize(step, done)        # 检查异常事件并保存状态
             # plot_tsc_delay(self.agent_lower.tsc)
 
             if done == True:
@@ -217,33 +218,42 @@ class Trainer():
         '''
         ## upper
         if step % self.cycle_time == 0:
-            self.agent_upper.implem_action_all(step)
+            print(f'-------- Current time step: {step} --------')
+            new_extend_flag = self.agent_upper.implem_action_all(step)
+        else:
+            new_extend_flag = self.lower_extend_flag
 
         ## lower
-        self.agent_lower.implem_action_all()
+        if new_extend_flag == self.lower_extend_flag:
+            extend_index = 0
+        elif new_extend_flag and not self.lower_extend_flag:
+            extend_index = 1
+        else:
+            extend_index = -1
+        self.lower_extend_flag = new_extend_flag
+        self.agent_lower.implem_action_all(extend_index)
 
     def memorize(self, step, done):
         ''' save the memory for upper and lower levels after each step
         '''
         ## upper level
         if step % self.cycle_time == 0:
-            ## update metric
-            # self.agent_upper.metric.update_control_interval()
-            self.agent_upper.perimeter.check_green_waste()
 
-            ##  end simu  '''Before the memorize '''
+            # check incidents
             done = self.check_gridlock(done, step)
+            self.agent_upper.perimeter.check_green_waste()
 
             upper_old_state = self.agent_upper.get_memory(done)
             # record the PN accumulation at the lower agent for N-MP
-            if self.agent_upper.peri_mode == 'N-MP':
+            if self.agent_upper.peri_mode in ['Expert', 'PI', 'N-MP']:
                 PN_accu = upper_old_state[0] * self.config['accu_max']
-                print(f'--------Current step: {step}, accumulation: {PN_accu }')
-                self.agent_lower.set_tsc_state(PN_accu)
+                print(f'PN vehicle accumulation after this interval: {PN_accu}. ')
+                if self.agent_upper.peri_mode == 'N-MP':
+                    self.agent_lower.set_tsc_state(PN_accu)
 
         ## lower level
         # if self.lower_mode != 'FixTime':
-        self.agent_lower.store_memory(done)
+        self.agent_lower.store_memory()
         return done
 
     def check_gridlock(self, done, step):
@@ -340,6 +350,8 @@ class Trainer():
         self.record_fields['peri_waiting_tot'] = upper_metric['peri_waiting_tot']
         self.record_fields['peri_waiting_mean'] = upper_metric['peri_waiting_mean']
         self.record_fields['peri_ordered_flow'] = upper_metric['ordered_inflow']
+        self.record_fields['peri_cumul_green'] = upper_metric['cumul_green']
+        self.record_fields['peri_cumul_throughput'] = upper_metric['cumul_throughput']
         self.record_fields['peri_estimate_inflow'] = upper_metric['estimated_inflow']
         # lower level data (interval: config['lower_agent_step'])
         self.record_fields['cumul_reward_lower'] = lower_metric['tsc_perveh_delay_mean']
@@ -349,6 +361,7 @@ class Trainer():
         self.record_fields['peri_spillover'] = lower_metric['peri_spillover']
         self.record_fields['peri_queue'] = lower_metric['peri_queue']
         self.record_fields['peri_throughput'] = lower_metric['peri_throughput']
+        self.record_fields['peri_throughput_each_tsc'] = lower_metric['peri_throughput_each_tsc']
         self.record_fields['peri_delay'] = lower_metric['peri_delay']
         self.record_fields['tsc_delay_step'] = lower_metric['tsc_delay_step']
         self.record_fields['tsc_perveh_delay_step'] = lower_metric['tsc_perveh_delay_step']
@@ -388,9 +401,9 @@ class Trainer():
         #                  peri_entered_vehs, self.cur_epis, \
         #                  self.agent_upper.action_type, self.n_jobs, self.agent_upper.perimeter.inflow_movements)
 
-        # ''' ordered inflow and actual inflow '''
-        # plot_ordered_real_action(self.config, peri_estimate_inflow, peri_entered_vehs,
-        #                          self.cur_epis, self.n_jobs)
+        ''' ordered inflow and actual inflow '''
+        # plot_ordered_real_action(self.config, self.record_fields['peri_estimate_inflow'],
+        #                          self.record_fields['peri_entered_vehs'], self.cur_epis, self.n_jobs)
 
         ''' PN level '''
         # MFD
@@ -443,11 +456,16 @@ class Trainer():
         save_stats(self.config, self.record_fields['PN_speed_epis'], self.cur_epis, self.n_jobs, 'PN_speed')
         # perimeter level
         save_stats(self.config, self.record_fields['peri_throughput'], self.cur_epis, self.n_jobs, 'peri_throughput')
+        save_stats(self.config, self.record_fields['peri_throughput_each_tsc'], self.cur_epis, self.n_jobs, 'peri_throughput_each_tsc')
         save_stats(self.config, self.record_fields['peri_queue'], self.cur_epis, self.n_jobs, 'peri_queue')
         save_stats(self.config, self.record_fields['peri_spillover'], self.cur_epis, self.n_jobs, 'peri_spillover')
         save_stats(self.config, self.record_fields['peri_entered_vehs'], self.cur_epis, self.n_jobs, 'peri_inflow')
         save_stats(self.config, self.record_fields['peri_outflow_vehs'], self.cur_epis, self.n_jobs, 'peri_outflow')
         save_stats(self.config, self.record_fields['peri_delay'], self.cur_epis, self.n_jobs, 'peri_delay')
+        for mov_type, green_stats in self.record_fields['peri_cumul_green'].items():
+            save_stats(self.config, green_stats, self.cur_epis, self.n_jobs, '_'.join(('peri', mov_type, 'cumul_green')))
+        for mov_type, throughput_stats in self.record_fields['peri_cumul_throughput'].items():
+            save_stats(self.config, throughput_stats, self.cur_epis, self.n_jobs, '_'.join(('peri', mov_type, 'cumul_throughput')))
         # overall level
         for trip_type, trip_avg_time_data in self.record_fields['trip_avg_travel_time'].items():
             save_stats(self.config, trip_avg_time_data, self.cur_epis, self.n_jobs, 'avg_travel_time_' + trip_type)
