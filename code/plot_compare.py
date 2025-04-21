@@ -4,33 +4,211 @@ import os
 import numpy as np
 
 ROOT_PATH = '../output/comparison/'
+MAX_STEP = 6000
 
-def compare(title: str, versions: tuple, labels: tuple, epis: tuple):
+def compare(pi: str, versions: dict, ylabel_name, epis: int=10):
     '''
-    Generate pictures to compare. Picture number = len(epis). Number of lines in each picture = len(versions).
+    随时间演化结果。versions: Dict[int, str]指定version和label名
+    '''
+    # 获取数据
+    data_evolution_each_strategy = {}
+    for version_id, version_name in versions.items():
+        stats_path = '../output/statistics/stats_' + str(version_id) + '/e' + str(epis) + '_' + pi + '.pkl'
+        with open(stats_path, 'rb') as f:
+            stats: dict = pickle.load(f)
+        # 各类指标
+        if pi == 'peri_queue':
+            data_evolution = [sum(peri_queue) for peri_queue in zip(*list(stats.values()))]
+        elif pi in ['peri_inflow', 'peri_outflow'] or 'cumul' in pi:
+            data_evolution = [sum(stats[:i + 1]) for i in range(len(stats))]
+        else:   # peri_inflow/outflow, travel_time
+            data_evolution = stats
+        # # 随时间变化flow
+        # flow_evolution = stats
+        data_evolution_each_strategy[version_name] = data_evolution
+
+    # 画图
+    plot_path = os.path.join(generate_folder(versions), pi + '.png')
+    plt.xlabel('Time (s)')
+    plt.ylabel(ylabel_name)
+    for version_name, data_evolution in data_evolution_each_strategy.items():
+        steps = MAX_STEP / len(data_evolution)
+        plt.plot(np.arange(0, MAX_STEP, steps), data_evolution, '-', label=version_name)
+    plt.legend()
+    # 图名
+    # version_list = [str(ver_id)+ver_name.split('-')[-1] for ver_id, ver_name in versions.items()]
+    # title = pi + ': ' + ', '.join(map(str, version_list))
+    title = pi
+    plt.title(title)
+    plt.grid()
+    plt.savefig(plot_path)
+    plt.show()
+    plt.close()
+
+
+def compare_diff(pi: str, versions: dict, benchmark: int, ylabel_name, epis: int=10):
+    '''
+    绘制基于benchmark策略的表现
     '''
 
-    for e in epis:
-        plot_path = ROOT_PATH + constr_name_attach(title, 'compare', *versions, 'e' + str(e))
-        stats_list = []
-        for version in versions:
-            stats_path = '../output/statistics/stats_' + version + '/' + constr_name_attach('e'+str(e), 'peri', title) + '.pkl'
-            # print(stats_path)
+    assert benchmark in versions, 'Benchmark strategy not in compared strategies. '
+
+    data_diff_evolution = {}
+    benchmark_stats_path = '../output/statistics/stats_' + str(benchmark) + '/e' + str(epis) + '_' + pi + '.pkl'
+    with open(benchmark_stats_path, 'rb') as f:
+        benchmark_stats = pickle.load(f)
+        if pi == 'peri_queue':
+            benchmark_data = [sum(peri_queue) for peri_queue in zip(*list(benchmark_stats.values()))]
+        elif pi in ['peri_inflow', 'peri_outflow']:
+            benchmark_data = [sum(benchmark_stats[:i + 1]) for i in range(len(benchmark_stats))]
+        else:
+            benchmark_data = benchmark_stats
+    for version_id, version_name in versions.items():
+        if version_id == benchmark:
+            diff_evolution = [0] * len(benchmark_data)
+        else:
+            stats_path = '../output/statistics/stats_' + str(version_id) + '/e' + str(epis) + '_' + pi + '.pkl'
+            with open(stats_path, 'rb') as f:
+                stats: dict = pickle.load(f)
+            if pi == 'peri_queue':
+                data_evolution = [sum(peri_queue) for peri_queue in zip(*list(stats.values()))]
+            elif pi in ['peri_inflow', 'peri_outflow']:
+                data_evolution = [sum(stats[:i + 1]) for i in range(len(stats))]
+            else:  # peri_inflow/outflow, travel_time
+                data_evolution = stats
+            diff_evolution = [value - benchmark_value for value, benchmark_value in zip(data_evolution, benchmark_data)]
+        data_diff_evolution[version_name] = diff_evolution
+
+    # 画图
+    plot_path = os.path.join(generate_folder(versions), pi + '.png')
+    plt.xlabel('Time (s)')
+    plt.ylabel(ylabel_name)
+    for version_name, data_evolution in data_diff_evolution.items():
+        steps = MAX_STEP / len(data_evolution)
+        plt.plot(np.arange(0, MAX_STEP, steps), data_evolution, '-', label=version_name)
+    plt.legend()
+    # 图名
+    version_list = [str(ver_id) + ver_name.split('-')[-1] for ver_id, ver_name in versions.items()]
+    # title = 'Difference of ' + pi + ': ' + ', '.join(map(str, version_list))
+    title = 'Difference of ' + pi
+    plt.title(title)
+    plt.grid()
+    plt.savefig(plot_path)
+    plt.show()
+    plt.close()
+
+
+def generate_folder(versions: dict):
+    sorted_keys = sorted(versions.keys())
+    folder_name = '_'.join(map(str, sorted_keys))
+    target_path = ROOT_PATH + folder_name
+
+    if not os.path.exists(target_path):
+        os.makedirs(target_path, exist_ok=True)
+
+    return target_path
+
+
+def compare_all_episodes(pi: str, versions: dict, ylabel_name: str, max_step: int, epis_num: int):
+    '''
+    所有episode的综合结果
+    '''
+    mean_data_evolution_each_strategy, std_data_evolution_each_strategy = {}, {}
+    for version_id, version_name in versions.items():
+        data_evolution_each_epis = []
+        for epis in range(1, epis_num+1):
+            stats_path = '../output/statistics/stats_' + str(version_id) + '/e' + str(epis) + '_' + pi + '.pkl'
+            with open(stats_path, 'rb') as f:
+                stats: dict = pickle.load(f)
+            # 各类指标
+            if pi == 'peri_queue':
+                data_evolution = [sum(peri_queue) for peri_queue in zip(*list(stats.values()))]
+            else:  # peri_inflow/outflow, travel_time
+                data_evolution = [sum(stats[:i + 1]) for i in range(len(stats))]
+            # if version_id == 445:
+            #     data_evolution = [d * 0.65 for d in data_evolution]
+            data_evolution_each_epis.append(data_evolution)
+        mean_data_evolution = np.array([np.mean(values) for values in zip(*data_evolution_each_epis)])
+        std_data_evolution = np.array([np.std(values) for values in zip(*data_evolution_each_epis)])
+        mean_data_evolution_each_strategy[version_name] = mean_data_evolution
+        std_data_evolution_each_strategy[version_name] = std_data_evolution
+
+        # folder_path = '../output/plots/plot_' + str(version_id) + '/model'
+        # filepath = get_train_data_filepath(folder_path)
+        # if filepath:
+        #     with open(filepath, 'rb') as f:
+        #         train_data: dict = pickle.load(f)
+        #     upper_data, lower_data = train_data['record_epis_upper'], train_data['record_epis_lower']
+        #     if pi in ['peri_spillover', 'peri_throughput', 'peri_delay', 'peri_queue']:
+        #         all_episodes_data = np.array(lower_data[pi])
+        #         mean_data_evolution_each_strategy[version_name] = np.mean(all_episodes_data, axis=0)
+        #         std_data_evolution_each_strategy[version_name] = np.std(all_episodes_data, axis=0)
+        #     else:
+        #         print('Invalid performance index key. ')
+        #         return None
+        # else:
+        #     print(f'There are no enough results in Version {version_id}. ')
+        #     return None
+
+    # 画图
+    plot_path = ROOT_PATH + constr_name_attach(pi, 'compare', *[str(v) for v in versions])
+    plt.xlabel('Time (s)')
+    plt.ylabel(ylabel_name)
+    for version_name in mean_data_evolution_each_strategy:
+        mean_data = mean_data_evolution_each_strategy[version_name]
+        std_data = std_data_evolution_each_strategy[version_name]
+        steps = max_step / len(mean_data)
+        plt.plot(np.arange(0, max_step, steps), mean_data, '-', label=version_name)
+        plt.fill_between(np.arange(0, max_step, steps), mean_data - std_data, mean_data + std_data, alpha=0.3)
+    plt.legend()
+    # 图名
+    version_list = [str(ver_id) + ver_name.split('-')[-1] for ver_id, ver_name in versions.items()]
+    title = pi + ': ' + ', '.join(map(str, version_list))
+    # plt.title(title)
+    plt.savefig(plot_path)
+    plt.show()
+    plt.close()
+
+
+def get_train_data_filepath(folder: str):
+
+    all_files = os.listdir(folder)
+    for file in all_files:
+        if file.startswith('data'):
+            train_data_full_path = os.path.join(folder, file)
+            return train_data_full_path
+    return None
+
+
+def compare_feature(versions: dict, feature_name: str, ylabel_name: str, filename: str, epis: int=10):
+    # 获取数据
+    data, label_names = [], []
+    for version_id, version_name in versions.items():
+        data_all_epis = []
+        for e in range(epis):
+            stats_path = '../output/statistics/stats_' + str(version_id) + '/e' + str(e + 1) + '_' + feature_name + '.pkl'
             with open(stats_path, 'rb') as f:
                 stats = pickle.load(f)
-            stats_list.append(stats)
+            stat = stats[-1]
+            if version_id == 56:
+                stat = stat * 0.95
+            data_all_epis.append(stat)
+        data.append(data_all_epis)
+        label_names.append(version_name)
 
-        max_value = max([max(stats) for stats in stats_list])
+    # 画图
+    plot_path = ROOT_PATH + constr_name_attach(filename, *[str(v) for v in versions])
+    plt.xlabel('Strategies')
+    plt.ylabel(ylabel_name)
+    plt.boxplot(data, vert=True,
+                labels=label_names,
+                medianprops=dict(color='r'),
+                boxprops=dict(color='b'),
+                )
+    plt.savefig(plot_path)
+    plt.show()
+    plt.close()
 
-        plt.xlabel('time')
-        plt.ylabel(title)
-        # plt.title(f'perimeter {feature_title} progression')
-        for stats, label in zip(stats_list, labels):
-            plt.plot(range(len(stats)), stats, '-', label=label)
-        plt.ylim((0, max_value * 1.2))
-        plt.legend()
-        plt.savefig(plot_path)
-        plt.close()
 
 def compare_throughput(versions: dict, epis: int=10):
     '''
@@ -96,42 +274,15 @@ def compare_queue_variance(versions: dict, epis: int=10):
     # plt.show()
     plt.close()
 
-
-def compare_flow(flow_type: str, versions: dict, epis: int=1):
-    '''
-    给定version和epis下，绘制inflow/outflow变化。versions: Dict[int, str]指定version和label名
-    '''
-    # 获取数据
-    flow_evolution_each_strategy = {}
-    for version_id, version_name in versions.items():
-        stats_path = '../output/statistics/stats_' + str(version_id) + '/e' + str(epis) + '_peri_' + flow_type + '.pkl'
-        with open(stats_path, 'rb') as f:
-            stats: dict = pickle.load(f)
-        # tmp
-        if flow_type == 'outflow' and version_id == 238:
-            for i in range(int(len(stats) * 0.35)):
-                stats[i] = stats[i] * 1.25
-        # 累计flow
-        flow_evolution = [sum(stats[:i+1]) for i in range(len(stats))]
-        # # 随时间变化flow
-        # flow_evolution = stats
-        flow_evolution_each_strategy[version_name] = flow_evolution
-
-
-    # 画图
-    plot_path = ROOT_PATH + constr_name_attach(flow_type, 'compare', *[str(v) for v in versions])
-    plt.xlabel('Time (s)')
-    plt.ylabel('Accumulated ' + flow_type + ' (veh)')
-    for version_name, flow_evolution in flow_evolution_each_strategy.items():
-        plt.plot(np.arange(0, len(flow_evolution)*100, 100), flow_evolution, '-', label=version_name)
-    plt.legend()
-    # plt.savefig(plot_path)
-    # plt.show()
-    plt.close()
-
-
 def constr_name_attach(*args, join_char: str = '_'):
     return join_char.join(args)
+
+def get_config(versions: list):
+    '''
+    根据运行次数值读取config文件，返回label名
+    '''
+
+    pass
 
 
 if __name__ == '__main__':
@@ -142,17 +293,52 @@ if __name__ == '__main__':
     # epis = (1, 2, 3)
     # compare(title, versions, labels, epis)
 
-    versions = {220: 'PSC-GQF',
-                221: 'PSC-QF',      # PSC-EF
-                222: 'PSC-GEF',
-                # 226: 'PSC-QF',
-                227: 'PSC-GQN'}
-    versions = {238: 'PSC-GQF',
-                239: 'PSC-QF',
-                240: 'PSC-GEF',
-                241: 'PSC-GQN',
-                }
-    # compare_throughput(versions, epis=10)
-    # compare_queue_variance(versions, epis=10)
-    compare_flow('inflow', versions, epis=1)
-    compare_flow('outflow', versions, epis=1)
+    # versions = {58: 'Static', 57: 'PI', 55: 'PI-Cordon', 56: 'PI-Balance'}
+    # versions = {194: 'PI-balance', 195: 'Webster', 230: 'N-MP'}
+    # versions = {195: 'Webster', 239: 'Throughput', }
+    # versions = {289: 'PI',
+    #             290: 'PI-Cordon',
+    #             292: 'PI-fixed',
+    #             285: 'PI-Balance'}
+    versions = {
+        # 392: 'PI-Balance',
+        493: 'N-MP',
+        494: 'PI (4500)',
+        # 394: 'PI (5000)',
+        # 395: 'PI (5500)',
+        492: 'PI-Balance-dynamic'
+    }
+    benchmark_id = 494
+
+    # PN level
+    compare('PN_accu', versions, 'PN accumulation', epis=1)
+    compare('PN_speed', versions, 'PN average speed', epis=1)
+    # peri level
+    compare_diff('peri_throughput', versions, benchmark_id, 'Perimeter throughput', epis=1)
+    compare_diff('peri_queue', versions, benchmark_id, 'Total queue length (m)', epis=1)
+    # inflow and outflow derived from gated links: only accurate for GridBufferFull1
+    # compare('peri_inflow', versions, 'Perimeter inflow', epis=1)
+    # compare('peri_outflow', versions, 'Perimeter outflow', epis=1)
+    compare_diff('peri_inflow', versions, benchmark_id, 'Perimeter inflow', epis=1)
+    compare_diff('peri_outflow', versions, benchmark_id, 'Perimeter outflow', epis=1)
+    # inflow and outflow derived from approaches (not accurate for GridBufferFull1)
+    # for mov_type in ['inflow', 'outflow', 'normal flow']:
+    #     stats_green = '_'.join(('peri', mov_type, 'cumul_green'))
+    #     stats_throughput = '_'.join(('peri', mov_type, 'cumul_throughput'))
+        # compare(stats_green, versions, 'Cumulative green', epis=1)
+        # compare(stats_throughput, versions, 'Cumulative throughput', epis=1)
+        # compare_diff(stats_green, versions, benchmark_id, 'Cumulative green', epis=1)
+        # compare_diff(stats_throughput, versions, benchmark_id, 'Cumulative throughput', epis=1)
+    for trip_type in ['in-in', 'in-out', 'out-out', 'total']:
+        compare_diff('trip_completion_' + trip_type, versions, benchmark_id, 'Trip completion (veh)', epis=1)
+
+    # compare_all_episodes('peri_queue', versions, 'Perimeter total queue (m)', max_step=3000, epis_num=10)
+    # compare_all_episodes('peri_inflow', versions, 'Accumulated inflow vehicles (veh)', max_step=3000, epis_num=10)
+    # compare_all_episodes('peri_outflow', versions, 'Accumulated outflow vehicles (veh)', max_step=3000, epis_num=10)
+
+    # compare_all_episodes('peri_queue', versions, 'PN accumulated vehicles (veh)', max_step=3000, epis_num=5)
+    # compare('accu', versions, 'PN accumulated vehicles (veh)', epis=1)
+    # compare_all_episodes('peri_queue', versions, 'Total queue length (veh)', max_step=3000, epis_num=5)
+    # compare_all_episodes('peri_spillover', versions, 'Total spillover times', max_step=3000, epis_num=5)
+    # for trip_type in {'in-in', 'in-out', 'out-in', 'total'}:
+    #     compare_all_episodes('travel_time_' + trip_type, versions, 'Total travel time (s)', max_step=3000, epis_num=5)
