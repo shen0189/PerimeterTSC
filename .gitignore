@@ -5,6 +5,7 @@ measurements
 *.rou.xml
 output
 code/utils/utilize.py
+code/plot_compare.py
 code/scripts
 *.trips.xml
 *.flows.xml
