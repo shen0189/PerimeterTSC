@@ -31,27 +31,31 @@ def import_train_static_configuration(config):
             18, 19, 21, 22, 23, 25, 27, 34, 36, 37, 39, 38, 40, 41, 43, 42, 45, 52,
             54, 57, 56, 58, 60, 61
         ])
-        config['Edge_PN_out'] = sorted([16, 17, 20, 24, 26, 44, 62, 63, 59, 55, 53,
-                                        35])  # the outflows of PN
+        config['Edge_Peri_out'] = sorted([16, 17, 20, 24, 26, 44, 62, 63, 59, 55, 53, 35])  # the outflows of PN
     elif config['network'] == 'FullGrid':
         config['Node'] = {
             'NodePN': ['I22', 'I32', 'I42', 'I23', 'I33', 'I43', 'I24', 'I34', 'I44'],
             'NodePeri': ['P11', 'P12', 'P13', 'P14', 'P21', 'P31', 'P41', 'P51',
                          'P15', 'P25', 'P35', 'P45', 'P52', 'P53', 'P54', 'P55'],
+            'NodeCorner': ['P11', 'P15', 'P51', 'P55'],     # GridBufferFull1定义下使用
             'NodeOutside': ['O01', 'O02', 'O03', 'O04', 'O05',
                             'O61', 'O62', 'O63', 'O64', 'O65',
                             'O10', 'O20', 'O30', 'O40', 'O50',
                             'O16', 'O26', 'O36', 'O46', 'O56']
         }
         config['Edge'] = [edge for i in range(10) for edge in range(i * 10 + 1, i * 10 + 9)] + \
-            [edge for i in range(10) for edge in range(i * 10 + 101, i * 10 + 105)]
+                         [edge for i in range(10) for edge in range(i * 10 + 101, i * 10 + 105)]
         config['Edge_PN'] = sorted([edge for i in range(10) for edge in range(i * 10 + 1, i * 10 + 9)])
-        # config['Edge_PN'] = [edge for i in range(2, 8) for edge in range(i * 10 + 3, i * 10 + 7)]
+        config['Edge_PN_inside'] = [edge for i in range(2, 8) for edge in range(i * 10 + 1, i * 10 + 9)]
+        config['Edge_PN_exit'] = sorted([32, 52, 72, 28, 48, 68, 37, 57, 77, 21, 41, 61])  # 从3*3到5*5的路段
         config['Edge_Peri'] = sorted(
             [edge for i in range(0, 10, 2) for edge in [i * 10 + 102, i * 10 + 114, i * 10 + 103, i * 10 + 111]])
-        config['Edge_PN_out'] = sorted(
+        config['Edge_Peri_high_demand'] = sorted(
+            [edge for i in range(0, 10, 2) for edge in [i * 10 + 102, i * 10 + 103]])
+        config['Edge_Peri_low_demand'] = sorted(
+            [edge for i in range(0, 10, 2) for edge in [i * 10 + 114, i * 10 + 111]])
+        config['Edge_Peri_out'] = sorted(
             [edge for i in range(0, 10, 2) for edge in [i * 10 + 104, i * 10 + 112, i * 10 + 101, i * 10 + 113]])
-
     elif config['network'] == 'Bloomsbury':
         config['Node'] = {
             'NodePN': [13, 12, 22, 21, 20, 19, 18, 17, 34],
@@ -67,10 +71,17 @@ def import_train_static_configuration(config):
 
     # [turn ratio config]
     if config['network'] == 'FullGrid':
-        config['TurnRatio'] = {
-            'NodePN': {'l': 0.3, 's': 0.5, 'r': 0.2},
-            'NodePeri': {'l': 0.3, 's': 0.5, 'r': 0.2},
-        }
+        if config['network_version'] in ['GridBufferFull', 'GridBufferFull2']:
+            config['TurnRatio'] = {
+                'EdgePN': {'l': 0.3, 's': 0.5, 'r': 0.2},
+                'EdgePeri': {'l': 0.3, 's': 0.5, 'r': 0.2},
+            }
+        elif config['network_version'] == 'GridBufferFull1':
+            config['TurnRatio'] = {
+                'EdgePN': {'l': 0.3, 's': 0.5, 'r': 0.2},
+                'EdgePeri': {'l': 0.3, 's': 0.5, 'r': 0.2},
+                'EdgeCorner': {'l': 0.3, 's': 0.7, 'r': 0.3}
+            }
         config['max_edges_factor'] = 0.8
     else:
         raise NotImplementedError
@@ -167,7 +178,6 @@ def import_train_static_configuration(config):
             'P12': {'node': 'P12', 'gated_edge': [122]},
             'P13': {'node': 'P13', 'gated_edge': [142]},
             'P14': {'node': 'P14', 'gated_edge': [162]},
-            'P14': {'node': 'P14', 'gated_edge': [162]},
             'P21': {'node': 'P21', 'gated_edge': [131]},
             'P31': {'node': 'P31', 'gated_edge': [151]},
             'P41': {'node': 'P41', 'gated_edge': [171]},
@@ -192,15 +202,27 @@ def import_train_static_configuration(config):
             8: ('south', 's')
         }
         config['phase_sequence'] = {
-            'EW-NS-HL-HL': [[1, 2, 3, 4], [5, 6, 7, 8]],
-            'EW-NS-HH-HL': [[1, 2, 3, 4], [6, 5, 7, 8]],
-            'EW-NS-HL-HH': [[1, 2, 3, 4], [5, 6, 8, 7]],
-            'EW-NS-HH-HH': [[1, 2, 3, 4], [6, 5, 8, 7]],
-            'NS-EW-HL-HL': [[3, 4, 1, 2], [7, 8, 5, 6]],
-            'NS-EW-HH-HL': [[3, 4, 1, 2], [8, 7, 5, 6]],
-            'NS-EW-HL-HH': [[3, 4, 1, 2], [7, 8, 6, 5]],
-            'NS-EW-HH-HH': [[3, 4, 1, 2], [8, 7, 6, 5]],
+            'EW-NS-HL-HL': [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
+            'EW-NS-HH-HL': [[[1, 2], [3, 4]], [[6, 5], [7, 8]]],
+            'EW-NS-HL-HH': [[[1, 2], [3, 4]], [[5, 6], [8, 7]]],
+            'EW-NS-HH-HH': [[[1, 2], [3, 4]], [[6, 5], [8, 7]]],
+            'NS-EW-HL-HL': [[[3, 4], [1, 2]], [[7, 8], [5, 6]]],
+            'NS-EW-HH-HL': [[[3, 4], [1, 2]], [[8, 7], [5, 6]]],
+            'NS-EW-HL-HH': [[[3, 4], [1, 2]], [[7, 8], [6, 5]]],
+            'NS-EW-HH-HH': [[[3, 4], [1, 2]], [[8, 7], [6, 5]]]
         }
+        config['phase_sequence_corner_type1'] = {
+            'EW-NS-HL-HL': [[[1, 2], [4]], [[5, 6], [8]]],
+            'EW-NS-HH-HL': [[[1, 2], [4]], [[6, 5], [8]]],
+            'NS-EW-HL-HL': [[[4], [1, 2]], [[8], [5, 6]]],
+            'NS-EW-HL-HH': [[[4], [1, 2]], [[8], [6, 5]]],
+        }       # P11, P55
+        config['phase_sequence_corner_type2'] = {
+            'EW-NS-HL-HL': [[[2], [3, 4]], [[6], [7, 8]]],
+            'EW-NS-HL-HH': [[[2], [3, 4]], [[6], [8, 7]]],
+            'NS-EW-HH-HL': [[[3, 4], [2]], [[8, 7], [6]]],
+            'NS-EW-HL-HH': [[[3, 4], [2]], [[7, 8], [6]]],
+        }       # P15, P51
     elif config['network'] == 'Bloomsbury':
         config['Peri_info'] = {
             '15': {
@@ -274,40 +296,45 @@ def import_train_static_configuration(config):
 
         # tls configure
         if config['lower_mode'] == 'OAM':  # 'FixTime'  #'OAM' # 'MaxPressure'
-            config['tls_config_name'] = './code/tls_new1.pkl'
+            config['tls_config_name'] = './code/tls/tls_new1.pkl'
         elif config['lower_mode'] == 'MaxPressure':
-            config['tls_config_name'] = './code/tls_new07.pkl'
+            config['tls_config_name'] = './code/tls/tls_new07.pkl'
 
     if config['network'] == 'FullGrid':
-        config['sumocfg_file_name'] = 'network/GridBufferFull/GridBuffer.sumocfg'
-        config['edgefile_dir'] = "network/GridBufferFull/GridBuffer.edg.xml"
-        config['netfile_dir'] = "network/GridBufferFull/GridBuffer.net.xml"
-        # config['routefile_dir'] = "network/GridBufferFull/GridBuffer.rou.xml"
-        config['singletype_flowfile_dir'] = "network/GridBufferFull/Demands/DemandType"      # +num+'.flows.xml'
-        config['turnfile_dir'] = "network/GridBufferFull/GridBuffer.turn.xml"      # +num+'.turn.xml'
-        config['singletype_tripfile_dir'] = "network/GridBufferFull/Demands/DemandType"      # +num+'.trips.xml'
-        config['routefile_dir'] = "network/GridBufferFull/GridBuffer.rou.xml"
-        config['edge_outputfile_dir'] = "measurements/GridBufferFull/EdgeMeasurements.xml"
-        config['lane_outputfile_dir'] = "measurements/GridBufferFull/EdgeMeasurements_lower.xml"
-        config['queuefile_dir'] = "measurements/GridBufferFull/queue.xml"
-        config['tripfile_dir'] = "measurements/GridBufferFull/trip.xml"
+        config['sumocfg_file_name'] = '/'.join(('network', config['network_version'], 'GridBuffer.sumocfg'))
+        config['edgefile_dir'] = '/'.join(('network', config['network_version'], 'GridBuffer.edg.xml'))
+        config['netfile_dir'] = '/'.join(('network', config['network_version'], 'GridBuffer.net.xml'))
+        # config['routefile_dir'] = '/'.join(('network', config['network_version'], 'GridBuffer.rou.xml'))
+        config['singletype_flowfile_dir'] = '/'.join(('network', config['network_version'], 'Demands', 'DemandType'))
+        config['turnfile_dir'] = '/'.join(('network', config['network_version'], 'Demands', 'GridBuffer.turn.xml'))
+        config['singletype_tripfile_dir'] = '/'.join(('network', config['network_version'], 'Demands', 'DemandType'))
+        config['routefile_dir'] = '/'.join(('network', config['network_version'], 'GridBuffer.rou.xml'))
+        config['edge_outputfile_dir'] = '/'.join(('measurements', config['network_version'], 'EdgeMeasurements.xml'))
+        config['lane_outputfile_dir'] = '/'.join(('measurements', config['network_version'], 'EdgeMeasurements_lower.xml'))
+        config['queuefile_dir'] = '/'.join(('measurements', config['network_version'], 'queue.xml'))
+        config['tripfile_dir'] = '/'.join(('measurements', config['network_version'], 'trip.xml'))
 
         # tls configure
         if config['upper_mode'] == 'Static':
             config['normal_plan'] = {
-                'GGGrrrrrGGGrrrrr': 25,
-                'yyyrrrrryyyrrrrr': 5,
-                'rrrGrrrrrrrGrrrr': 15,
-                'rrryrrrrrrryrrrr': 5,
-                'rrrrGGGrrrrrGGGr': 25,
-                'rrrryyyrrrrryyyr': 5,
-                'rrrrrrrGrrrrrrrG': 15,
-                'rrrrrrryrrrrrrry': 5
+                'GGGrrrGGGrrr': 25,
+                'yyyrrryyyrrr': 5,
+                'rrGrrrrrGrrr': 15,
+                'rryrrrrryrrr': 5,
+                'rrrGGGrrrGGG': 25,
+                'rrryyyrrryyy': 5,
+                'rrrrrGrrrrrG': 15,
+                'rrrrryrrrrry': 5
             }
         if config['lower_mode'] == 'MaxPressure':
-            config['tls_config_name'] = './code/tls_full_02.pkl'
-        else:
-            raise NotImplementedError
+            if config['network_version'] == 'GridBufferFull':
+                config['tls_config_name'] = './code/tls/tls_full_0.pkl'
+            elif config['network_version'] == 'GridBufferFull1':
+                config['tls_config_name'] = './code/tls/tls_full_1.pkl'
+            elif config['network_version'] == 'GridBufferFull2':
+                config['tls_config_name'] = './code/tls/tls_full_2.pkl'
+        # else:
+        #     raise NotImplementedError
     
     if config['network'] == 'Bloomsbury':
         config['sumocfg_file_name'] = 'network/Bloomsbury/Bloomsbury.sumocfg'
@@ -320,9 +347,9 @@ def import_train_static_configuration(config):
 
         # tls configure
         if config['lower_mode'] == 'OAM':  # 'FixTime'  #'OAM' # 'MaxPressure'
-            config['tls_config_name'] = './code/tls_bloom_1.pkl'
+            config['tls_config_name'] = './code/tls/tls_bloom_1.pkl'
         elif config['lower_mode'] == 'MaxPressure':
-            config['tls_config_name'] = './code/tls_bloom_05.pkl'
+            config['tls_config_name'] = './code/tls/tls_bloom_05.pkl'
 
     return config
 
