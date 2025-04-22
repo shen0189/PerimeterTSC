@@ -6,35 +6,109 @@ import os
 import matplotlib
 import matplotlib.axes._axes as axes
 import matplotlib.figure as figure
+from matplotlib.collections import LineCollection
+import matplotlib.colors as mcolors
+from utils.networkdata import NetworkData
 matplotlib.use('Agg')
+import pandas as pd
+from scipy.optimize import curve_fit
+
+########## MFD Curve ##########
+def mfd_func(x, a, b, c, d):
+    return a * x ** 3 + b * x ** 2 + c * x + d
 
 ################# PLOT WITHIN ONE EPISODE #######################
-def plot_MFD(config, accu, flow, aggregate_time, e, reward, n_jobs, reward_lower):
+def plot_MFD(config, accu, flow, step, e, reward, n_jobs, reward_lower):
     ''' Plot MFD of each simulation
     '''
-    # unit reform
-    # throughput = np.array(throughput) / aggregate_time * 3600
     plt.xlabel('acc(veh)')
     plt.ylabel('outflow(veh/h)')
     plt.title(f'MFD (episode{e + 1})')
-    plt.scatter(accu, flow)
-    plt.xlim((0., config['accu_max']))
-    plt.ylim(0., 1000)
-    # plt.plot(x1, y1, label='整体路网基本图')
-    # plt.plot(x2, y2, label='子路网基本图')
-    # plt.legend()
-    # plt.show()
+    # give color to each point according to the index (equivalent to time step)
+    color_group_size = 20       # size * 5 = time of each group
+    group_num = (len(accu) + color_group_size - 1) // color_group_size
+    color_values = np.arange(len(accu)) // color_group_size
+    cmap = plt.cm.Blues
+    norm = mcolors.Normalize(vmin=0, vmax=group_num - 1)
+    # plot the scatter
+    scatter = plt.scatter(accu, flow, c=color_values, cmap=cmap, norm=norm, edgecolor='gray')
+    # cbar = plt.colorbar(scatter)
+    # tick_locs = np.arange(group_num)
+    # tick_labels = (tick_locs + 1) * color_group_size * config['lower_agent_step']
+    # cbar.set_ticks(tick_locs)
+    # cbar.set_ticklabels(tick_labels)
+    # cbar.set_label('Time interval')
+
+    # plot the fitting curve
+    if config['demand_mode'] == 'MFD':
+        mfd_x = np.linspace(0, max(accu), int(max(accu)))
+        coeffs, var = curve_fit(mfd_func, accu, flow, p0=[1, -1, 1, 0], maxfev=10000)
+        mfd_y = mfd_func(mfd_x, *coeffs)
+        # mfd_coeffs = np.polyfit(accu, flow, 3)
+        # mfd_func = np.poly1d(mfd_coeffs)
+        # mfd_x = np.linspace(0, max(accu), int(max(accu)))
+        # mfd_y = mfd_func(mfd_x)
+        plt.plot(mfd_x, mfd_y, color='red', linewidth=2, label='MFD')
+    plt.xlim(0., max(accu) * 1.1)
+    plt.ylim(0., max(flow) * 1.2)
+    plt.grid()
+    # save the figure
     if e % n_jobs == 0:
         file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_MFD_{np.around(reward, 2)}_{np.around(reward_lower, 2)}.png"
         plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
         plt.savefig(plot_path)
-
     else:
         file_name = f"e{e + 1}_MFD_{int(np.around(reward, 2))}_{np.around(reward_lower, 2)}.png"
         plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
         plt.savefig(plot_path)
     plt.close()
 
+    # print the key parameters in the console
+    if config['demand_mode'] == 'MFD':
+        critical_accu = mfd_x[np.argmax(mfd_y)]
+        print(f"The critical accumulation of the PN is {critical_accu} vehicles. ")
+        reduced_max_flow = np.max(mfd_y) * config['max_flow_ratio']
+        accu_idx = np.argmax(mfd_y)
+        while True:
+            if mfd_y[accu_idx] < reduced_max_flow:
+                break
+            accu_idx += 1
+        upper_bound_accu = mfd_x[accu_idx]
+        print(f"The upper bound accumulation of the PN is {upper_bound_accu} vehicles. ")
+
+
+def plot_trip_MFD(config, accu: np.ndarray, trip: np.ndarray, e: int, n_jobs: int):
+    '''
+    plot the MFD with mean-density and trip completion rate
+    '''
+    # process the data
+    density_epis: np.ndarray = accu / config['PN_total_length']
+    agg_step_num = int(config['trip_complete_interval'] / config['lower_agent_step'])
+    assert len(density_epis) % agg_step_num == 0
+    average_density_epis = density_epis.reshape(-1, agg_step_num).mean(axis=1)      # veh/ln-km
+    assert len(average_density_epis) == len(trip)
+    trip_completion_epis = trip / config['trip_complete_interval'] * 3600       # veh/h
+    # remove points with zero completion rate
+    zero_mask = average_density_epis != 0
+    average_density_epis = average_density_epis[zero_mask]
+    trip_completion_epis = trip_completion_epis[zero_mask]
+    # plot
+    plt.xlabel('Density (veh/km)')
+    plt.ylabel('Trip completion rate (veh/h)')
+    plt.title(f'MFD (episode{e + 1})')
+    plt.scatter(average_density_epis, trip_completion_epis)
+    plt.xlim(0., max(average_density_epis * 1.2))
+    plt.ylim(0., max(trip_completion_epis) * 1.2)
+    plt.grid()
+    if e % n_jobs == 0:
+        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_MFD.png"
+        plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
+        plt.savefig(plot_path)
+    else:
+        file_name = f"e{e + 1}_MFD.png"
+        plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
+        plt.savefig(plot_path)
+    plt.close()
 
 def plot_flow_MFD(config, accu, flow, e, n_jobs, traci=False):
     # accu = np.array(accu)
@@ -69,6 +143,86 @@ def plot_flow_MFD(config, accu, flow, e, n_jobs, traci=False):
     plt.close('all')
 
 
+def plot_link_status(config, net_data: dict, link_density: pd.DataFrame, e, n_jobs):
+    """
+    plot the congestion status of each link
+    """
+
+    # generate the road map
+    link_width = 25
+    link_coords = []
+    for edge_id, edge_data in net_data['edge'].items():
+        edge_id = int(edge_id)
+        if edge_id not in config['Edge_PN']:
+            continue
+        from_node, to_node = edge_data['outnode'], edge_data['incnode']
+        from_x, from_y = net_data['node'][from_node]['x'], net_data['node'][from_node]['y']
+        to_x, to_y = net_data['node'][to_node]['x'], net_data['node'][to_node]['y']
+        # modify the coordinates to fit the plot
+        if from_x == to_x:      # vertical link
+            if from_y < to_y:       # from south to north
+                from_y += link_width
+                to_y -= link_width
+                from_x += link_width / 2
+                to_x += link_width / 2
+            else:       # from north to south
+                from_y -= link_width
+                to_y += link_width
+                from_x -= link_width / 2
+                to_x -= link_width / 2
+        else:    # horizontal link
+            if from_x < to_x:       # from west to east
+                from_x += link_width
+                to_x -= link_width
+                from_y -= link_width / 2
+                to_y -= link_width / 2
+            else:       # from east to west
+                from_x -= link_width
+                to_x += link_width
+                from_y += link_width / 2
+                to_y += link_width / 2
+        link_coords.append([[from_x, from_y], [to_x, to_y]])
+    links = []
+    for link_coord in link_coords:
+        links.append(np.array(link_coord))
+
+    # plot the congestion status at each sampled time step (average the link density within the last cycle)
+    sample_interval = 200
+    for i in range(int(config['max_steps'] / sample_interval)):
+        interval_begin = (i + 1) * sample_interval
+        link_density_value = []
+        for edge_id, edge_data in net_data['edge'].items():
+            if int(edge_id) not in config['Edge_PN']:
+                continue
+            step, density_evolution = 5, []
+            while step <= config['cycle_time']:
+                density_evolution.append(link_density.loc[interval_begin - step, edge_id][0])
+                step += 5
+            link_density_value.append(float(np.mean(density_evolution)))
+        # figure settings
+        norm = mcolors.Normalize(vmin=0, vmax=300)
+        colors = ['green', 'yellow', 'red']
+        cmap = mcolors.LinearSegmentedColormap.from_list("green_yellow_red", colors, N=256)
+        lc = LineCollection(links, cmap=cmap, norm=norm, linewidths=link_width / 8)
+        lc.set_array(np.array(link_density_value))
+        # plot the figure
+        fig, ax = plt.subplots()
+        ax.add_collection(lc)
+        ax.set_xlim(-100, 2100)
+        ax.set_ylim(-100, 2100)
+        fig.colorbar(lc, ax=ax, label='Link density')
+        # save the figure
+        if e % n_jobs == 0:
+            file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_link_density_time_{interval_begin}.png"
+            plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
+            fig.savefig(plot_path)
+        else:
+            file_name = f"e{e + 1}_link_density_time_{interval_begin}.png"
+            plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
+            fig.savefig(plot_path)
+        plt.close(fig)
+
+
 def plot_demand(config, demand_config, demand_interval_sec, demand_interval_total):
     Demand_Interval = np.array(
         [i * demand_interval_sec for i in range(demand_interval_total)])
@@ -85,6 +239,25 @@ def plot_demand(config, demand_config, demand_interval_sec, demand_interval_tota
 
     plt.legend()
     # plt.show()
+    plt.savefig(f"{config['plots_path_name']}Demand.png")
+    plt.close()
+
+
+def plot_demand_from_turn(config):
+    Demand_Intervals = [sum(config['Demand_interval'][:i]) for i in range(len(config['Demand_interval']) + 1)]
+    Demand_Intervals.append(config['max_steps'])
+    Demand_Intervals = np.array(Demand_Intervals)
+
+    for DemandType in config['DemandConfig']:
+        Demand_Volume = [demand * DemandType['multiplier'] * len(DemandType['FromEdges']) for demand in DemandType['VolumeProfile']] + [0, 0]
+        Demand_Volume = np.array(Demand_Volume)
+        plt.step(Demand_Intervals, Demand_Volume, where='post', label=f"{DemandType['DemandType']}")
+
+    plt.legend()
+    plt.xlabel('Time(sec)')
+    plt.ylabel('Demand(veh/h)')
+    plt.title('Demand profile')
+
     plt.savefig(f"{config['plots_path_name']}Demand.png")
     plt.close()
 
@@ -189,42 +362,42 @@ def plot_accu(config, accu, e, n_jobs):
     plt.plot(range(len(accu)), accu, 'o-', label=f"accumulation")
     plt.legend()
     if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_estimate_actual_inflow.png"
+        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_accu.png"
         plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
         plt.savefig(plot_path)
     else:
-        file_name = f"e{e + 1}_estimate_actual_inflow.png"
+        file_name = f"e{e + 1}_accu.png"
         plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
         plt.savefig(plot_path)
         # plt.savefig(f"{plot_path}e{e+1}_tls_delay.png")
-    pass
-
-
-def plot_accu(config, accu, throughput, buffer_queue, e):
-    ''' Plot progression of accumulation and throughput of each simulation
-    '''
-    plt.subplot(3, 1, 1)
-    # plt.xlabel('cycle')
-    plt.ylabel('accumulation (veh)')
-    plt.title(f'progression of (episode{e + 1})')
-    plt.plot(range(len(accu)), accu, 'o-', label=f"accumulation")
-    plt.legend()
-
-    plt.subplot(3, 1, 2)
-    plt.xlabel('cycle')
-    plt.ylabel('throughput (veh/cycle)')
-    plt.plot(range(len(throughput)), throughput, 'g>-', label=f"throughput")
-    plt.legend()
-
-    plt.subplot(3, 1, 3)
-    plt.xlabel('cycle')
-    plt.ylabel('vehicle number (veh/cycle)')
-    plt.plot(range(len(buffer_queue)), buffer_queue,
-             'k>-', label=f"buffer queue")
-    plt.legend()
-
-    plt.savefig(f"{config['plots_path_name']}e{e + 1}_accu_throuput.png")
     plt.close()
+
+
+# def plot_accu(config, accu, throughput, buffer_queue, e):
+#     ''' Plot progression of accumulation and throughput of each simulation
+#     '''
+#     plt.subplot(3, 1, 1)
+#     # plt.xlabel('cycle')
+#     plt.ylabel('accumulation (veh)')
+#     plt.title(f'progression of (episode{e + 1})')
+#     plt.plot(range(len(accu)), accu, 'o-', label=f"accumulation")
+#     plt.legend()
+#
+#     plt.subplot(3, 1, 2)
+#     plt.xlabel('cycle')
+#     plt.ylabel('throughput (veh/cycle)')
+#     plt.plot(range(len(throughput)), throughput, 'g>-', label=f"throughput")
+#     plt.legend()
+#
+#     plt.subplot(3, 1, 3)
+#     plt.xlabel('cycle')
+#     plt.ylabel('vehicle number (veh/cycle)')
+#     plt.plot(range(len(buffer_queue)), buffer_queue,
+#              'k>-', label=f"buffer queue")
+#     plt.legend()
+#
+#     plt.savefig(f"{config['plots_path_name']}e{e + 1}_accu_throuput.png")
+#     plt.close()
 
 
 def plot_critic_loss(critic_loss, level, mode):
@@ -352,16 +525,15 @@ def plot_actions(config, actions, actions_excuted, e, action_type, n_jobs, categ
     plt.close()
 
 
-def plot_ordered_real_action(config, estimated_inflow, actual_inflow, e, n_jobs, ordered_inflow=None):
+def plot_ordered_real_action(config, ordered_inflow, actual_inflow, e, n_jobs):
     plt.xlabel('time')
     plt.ylabel('inflow (veh)')
     # plt.title('Estimated and actual inflow')
-    plt.plot(np.arange(0, len(estimated_inflow) * 100, 100), estimated_inflow, '-', c='b', label='Estimated inflow')
+    plt.plot(np.arange(0, len(ordered_inflow) * 100, 100), ordered_inflow, '-', c='b', label='Ordered inflow')
     plt.plot(np.arange(0, len(actual_inflow) * 100, 100), actual_inflow, '-', c='g', label='Actual inflow')
-    if ordered_inflow:
-        plt.plot(np.arange(0, len(ordered_inflow) * 100, 100), ordered_inflow, '-', c='black', label='Ordered inflow')
-    plt.ylim((0, 250))  # 统一scale
+    plt.ylim((0, max(max(ordered_inflow), max(actual_inflow)) * 1.2))  # 统一scale
     plt.legend()
+    plt.grid()
     if e % n_jobs == 0:
         file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_estimate_actual_inflow.png"
         plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
@@ -393,9 +565,6 @@ def plot_q_value_improve(q_value_improve):
     plot_path = os.path.join(config['plots_path_name'], 'critic', file_name)
     plt.savefig(plot_path)
     plt.close()
-
-
-
 
 
 def plot_tsc_delay(config, tsc_all, e, n_jobs):
@@ -553,27 +722,40 @@ def plot_controlled_tls_delay_epis(config, tls_delay_epis, e, n_jobs, ylim, titl
     plt.close()
 
 
-def plot_peri_feature_progression(config, feature_epis, e, n_jobs, feature_title, ylim):
+def plot_feature_progression(config, feature_epis, e, n_jobs, feature_title, ylabel_name, has_title=True):
     """
-    plot the progression of the total throughput of all perimeter intersections
+    plot the progression of a specific feature
     """
     plt.xlabel('time')
-    plt.ylabel(ylim)
-    plt.title(f'perimeter {feature_title} progression')
-    plt.plot(range(len(feature_epis)), feature_epis, '-')
-    plt.ylim((0, max(feature_epis) * 1.2 + 10))
+    plt.ylabel(ylabel_name)
+    plt.grid()
+    if has_title:
+        plt.title(f'{feature_title} progression of episode {e + 1}')
+    if isinstance(feature_epis, list) or isinstance(feature_epis, np.ndarray):      # 一条直线
+        step = config['max_steps'] / len(feature_epis)
+        plt.plot(np.arange(0, config['max_steps'], step), feature_epis, '-')
+        plt.ylim((0, max(feature_epis) * 1.2))
+    elif isinstance(feature_epis, dict):    # 同一指标的不同类型的直线，绘制于同一张图
+        y_max = 0
+        for feature_type, feature_data in feature_epis.items():
+            step = config['max_steps'] / len(feature_data)
+            plt.plot(np.arange(0, config['max_steps'], step), feature_data, '-', label=feature_type)
+            y_max = max(y_max, max(feature_data))
+        plt.legend()
+        plt.ylim((0, y_max * 1.2 + 10))
+
     if e % n_jobs == 0:
-        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_peri_{feature_title}.png"
+        file_name = f"e{int(np.around((e) / n_jobs + 1, 0))}_{feature_title}.png"
         plot_path = os.path.join(config['plots_path_name'], 'test', file_name)
         plt.savefig(plot_path)
     else:
-        file_name = f"e{e + 1}_peri_{feature_title}.png"
+        file_name = f"e{e + 1}_{feature_title}.png"
         plot_path = os.path.join(config['plots_path_name'], 'explore', file_name)
         plt.savefig(plot_path)
     plt.close()
 
 
-def plot_peri_queue_progression(config, queue_epis: dict, e, n_jobs):
+def plot_peri_queue_progression(config, queue_epis: dict, max_length, e, n_jobs):
     """
     plot the progression of queue length on each perimeter inflows in a heatmap
     """
@@ -586,7 +768,7 @@ def plot_peri_queue_progression(config, queue_epis: dict, e, n_jobs):
     fig_height = pixel_width * queue_evolve.shape[0]
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))    # type:figure.Figure, axes.Axes
-    cax = ax.imshow(queue_evolve, cmap='coolwarm', aspect='equal')
+    cax = ax.imshow(queue_evolve, cmap='coolwarm', aspect='equal', vmin=0, vmax=max_length*0.9)
     cbar = fig.colorbar(cax, ax=ax)     # 设置颜色条
     cbar.set_label('Queue length (m)')
     ax.set_xticks(np.arange(queue_evolve.shape[1]))
@@ -608,7 +790,7 @@ def plot_peri_queue_progression(config, queue_epis: dict, e, n_jobs):
     plt.close()
 
 
-################# save #######################
+################# SAVE #######################
 def save_data_train_upper(agent_upper, agent_lower):
     ''' save objective, reward, penalty, throughput along the training process of upper agents
     '''
@@ -670,8 +852,4 @@ def save_stats(config, stats, e, n_jobs, stats_name):
     with open(stats_path, 'wb') as f:
         pickle.dump(stats, f)
 
-# def save_tsc_config(config):
-#
-#     tsc_config = {'peri_distribution': config['peri_distribution_mode'],
-#                   'peri_phase_mode': config['peri_signal_phase_mode']}
 
