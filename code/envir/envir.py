@@ -42,6 +42,7 @@ class Simulator():
         self.lower_mode = config['lower_mode']
 
         self.vehicle_loc = {}
+        self.vehicle_routes = {}
 
     def simu_start(self, sumo_cmd):
         traci.start(sumo_cmd)
@@ -109,6 +110,10 @@ class Simulator():
         done = False
         if self._step >= self.max_steps:
             done = True
+            print(self.vehicle_loc)
+            for signal_id, signal in self.peridata.peri_signals.items():
+                for lane_id, lane in signal.in_lanes.items():
+                    print(f'Queue on lane {lane_id} at the end of simulation: {lane.queueing_vehicles}')
 
         ## get data output
         #  1. for OAM
@@ -167,7 +172,6 @@ class Simulator():
         Update the halting vehicle and inflow of peri lanes at each step within one interval.
         Update the (approximate) outflow of peri lanes of each interval with induction loops.
         '''
-        record_distance = 500   # 距离停车线的距离
         if self._step % 10 == 0:
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
@@ -176,70 +180,76 @@ class Simulator():
                     if halt_num > lane.this_interval_max_halting_number:
                         lane.this_interval_max_halting_number = halt_num
 
+                    edge = lane.edge
                     # 更新个体车辆信息
-                    left_lane_id = lane_id.split('_')[0] + '_2'
-                    left_lane = signal.in_lanes[left_lane_id]
                     vehicles: list = traci.lane.getLastStepVehicleIDs(lane_id)
                     for vehicle_id in vehicles:
                         # 车辆信息
                         speed = traci.vehicle.getSpeed(vehicle_id)
                         pos = traci.vehicle.getLanePosition(vehicle_id)
-                        if left_lane_id == lane_id or speed > 0.1 or left_lane.queue < 50:      # 减少判断次数
-                            is_blocked_vehicle = False
-                        else:
-                            try:
-                                is_blocked_vehicle = check_blocked_vehicle(
-                                    traci.vehicle.getLaneChangeState(vehicle_id, 1)[0])
-                            except:
-                                is_blocked_vehicle = False
-                        # if is_blocked_vehicle:
-                        #     print(f'blocked vehicle: {vehicle_id} on lane {lane_id}')
+                        if vehicle_id not in self.vehicle_routes:
+                            self.vehicle_routes[vehicle_id] = traci.vehicle.getRoute(vehicle_id)
 
-                        # 被堵塞车辆: 不需要根据速度决定是否加入排队
-                        if is_blocked_vehicle:
-                            if vehicle_id not in left_lane.virtual_queue_vehicles:
-                                left_lane.virtual_queue_vehicles.append(vehicle_id)
-                            if vehicle_id not in self.vehicle_loc:
-                                left_lane.entered_vehicles.append(vehicle_id)
-                                self.vehicle_loc[vehicle_id] = [signal_id, left_lane_id]
-                        # 普通车辆
-                        else:
-                            # Case 1: 之前为被堵塞车辆, 现在变道完成(lane=left_lane)
-                            if vehicle_id in lane.virtual_queue_vehicles:
-                                lane.virtual_queue_vehicles.remove(vehicle_id)
-                                lane.queueing_vehicles.append(vehicle_id)
-                            # Case 2: 其他普通车辆
+                        if speed < 0.1 or pos > lane.length - config['record_distance']:
+                            route = self.vehicle_routes[vehicle_id]
+                            assert edge in route
+                            edge_idx = route.index(edge)
+                            if edge_idx == len(route) - 1:      # 到达终点edge
+                                self.vehicle_loc.pop(vehicle_id, None)
+                                self.vehicle_routes.pop(vehicle_id, None)
+                                continue
+
+                            next_edge = route[edge_idx + 1]  # 该车辆下一个edge
+                            # 根据route确定车辆实际所属车道
+                            if next_edge in lane.downstream_edges:
+                                target_lane_id, target_lane = lane_id, lane
                             else:
-                                if speed < 0.1 and pos > 10:
-                                    if vehicle_id not in lane.queueing_vehicles:
-                                        lane.queueing_vehicles.append(vehicle_id)
-                                if pos > lane.length - record_distance:
-                                    if vehicle_id not in self.vehicle_loc:  # 新车辆
-                                        lane.entered_vehicles.append(vehicle_id)
-                                        self.vehicle_loc[vehicle_id] = [signal_id, lane_id]
-                                    else:   # 已在路网上的车辆
-                                        former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
-                                        if former_lane_id != lane_id:   # 1) 变道 2) 进入下一个link
-                                            former_lane = self.peridata.peri_signals[former_signal_id].in_lanes[former_lane_id]
-                                            if vehicle_id in former_lane.entered_vehicles and former_signal_id == signal_id:
-                                                former_lane.entered_vehicles.remove(vehicle_id)
-                                                lane.entered_vehicles.append(vehicle_id)
-                                            self.vehicle_loc[vehicle_id] = [signal_id, lane_id]
+                                for idx in range(2, -1, -1):
+                                    test_lane_id = '_'.join((edge, str(idx)))
+                                    test_lane = signal.in_lanes[test_lane_id]
+                                    if next_edge in test_lane.downstream_edges:
+                                        target_lane_id, target_lane = test_lane_id, test_lane
+                                        break
+
+                            # queue veh
+                            # 可能导致同一车辆同时出现在queue和virtual queue, 但可通过后面更新过程清理
+                            if speed < 0.1 and pos > 10:
+                                if target_lane_id == lane_id:
+                                    target_lane.queueing_vehicles.add(vehicle_id)
+                                else:
+                                    target_lane.virtual_queue_vehicles.add(vehicle_id)
+
+                            # entered veh (arrival rate)
+                            if pos > lane.length - config['record_distance']:  # 不记录过于上游的车辆
+                                if vehicle_id not in self.vehicle_loc:
+                                    target_lane.entered_vehicles.add(vehicle_id)    # 直接计入target lane, 避免变道问题
+                                    self.vehicle_loc[vehicle_id] = [signal_id, target_lane_id]
+                                else:  # 已在路网上的车辆
+                                    former_signal_id, former_lane_id = self.vehicle_loc[vehicle_id]
+                                    if former_signal_id != signal_id:  # 进入下一个link
+                                        target_lane.entered_vehicles.add(vehicle_id)
+                                        self.vehicle_loc[vehicle_id] = [signal_id, target_lane_id]
 
         if self._step % config['updatestep'] == 0:
-            # 每个interval结束且更新了排队后, 更新离开车辆数
+            # 每个interval结束时, 更新queue_vehicle, 删除离开该lane的车辆
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
-                    left_lane_id = lane_id.split('_')[0] + '_2'
-                    left_lane = signal.in_lanes[left_lane_id]
-                    # 离开车辆: 对比当前车道上的车辆和队列中的车辆, 删除不在车道上的车辆
-                    current_vehicles = traci.lane.getLastStepVehicleIDs(lane_id)
-                    for vehicle in reversed(lane.queueing_vehicles):
-                        if vehicle not in (list(current_vehicles) + left_lane.virtual_queue_vehicles):
-                            lane.queueing_vehicles.remove(vehicle)
-                            # 清除记录
-                            if self.vehicle_loc.get(vehicle, (0, 0))[1] == lane_id:
-                                self.vehicle_loc.pop(vehicle, None)
+                    lane_current_vehicles = traci.lane.getLastStepVehicleIDs(lane_id)
+                    edge_current_vehicles = traci.edge.getLastStepVehicleIDs(lane_id.split('_')[0])
+
+                    for vehicle in set(lane.queueing_vehicles):
+                        if vehicle not in edge_current_vehicles:      # 进入下一个link
+                            lane.queueing_vehicles.discard(vehicle)
+                        else:
+                            if vehicle not in lane_current_vehicles:        # 变道到其他lane
+                                lane.queueing_vehicles.discard(vehicle)
+                    for vehicle in set(lane.virtual_queue_vehicles):
+                        if vehicle not in edge_current_vehicles:      # 进入下一个link
+                            lane.virtual_queue_vehicles.discard(vehicle)
+                        else:
+                            if vehicle in lane_current_vehicles:            # 变道到target lane
+                                lane.virtual_queue_vehicles.discard(vehicle)
+                                lane.queueing_vehicles.add(vehicle)
 
         if self._step % config['detector_interval'] == 0:
             # 每个检测器interval结束时记录车道的驶离车辆数（用于判断特殊情况, 可以有1-2辆的误差）
@@ -248,6 +258,14 @@ class Simulator():
                     detector_id = lane_id + '_out'
                     lane_outflow = traci.inductionloop.getLastIntervalVehicleNumber(detector_id)
                     lane.outflow_vehicle_num += lane_outflow
+            # out-out/in-out类车辆驶出PN后删除route记录
+            for edge in config['Edge_Peri_out']:
+                for lane in range(3):
+                    detector_id = '_'.join((str(edge), str(lane), 'in'))
+                    pass_vehs = traci.inductionloop.getLastIntervalVehicleIDs(detector_id)
+                    for veh in pass_vehs:
+                        self.vehicle_loc.pop(veh, None)
+                        self.vehicle_routes.pop(veh, None)
 
         if self._step % config['cycle_time'] == 0:
             # 周期结束时获取出口道的最末端停车车辆位置
@@ -284,21 +302,6 @@ class Simulator():
         for k in self.states:
             state += list(self.state_dict[k])
         return state
-
-
-def check_blocked_vehicle(lc_state: int):
-    state = []
-    i = 0
-    while lc_state > 0:
-        if lc_state & 1:
-            state.append(i)
-        lc_state >>= 1
-        i += 1
-
-    if 1 in state and 8 in state:   # 1: left; 8: urgent
-        return True
-    else:
-        return False
 
 
 if False:
