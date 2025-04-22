@@ -71,8 +71,7 @@ class UpperAgents:
                             'upper_reward_epis', 'upper_penalty_epis',
                             'accu', 'speed', 'flow', 'TTD', 'PN_waiting', 'peri_entered_vehs',
                             'density_heter_PN', 'peri_waiting_mean', 'peri_waiting_tot']
-        self.ordered_action = []
-        self.estimated_inflow = []
+        self.ordered_inflow = []
         self.cumul_green = {'inflow': [], 'outflow': [], 'normal flow': []}
         self.cumul_throughput = {'inflow': [], 'outflow': [], 'normal flow': []}
         self.record_epis = {}
@@ -128,8 +127,7 @@ class UpperAgents:
         self.cumul_reward, self.cumul_penalty = 0, 0
         # self.action_excute_list = []
         # self.reward_epis, self.penalty_epis = [], []
-        self.ordered_action = []
-        self.estimated_inflow = []
+        self.ordered_inflow = []
 
         # init state
         self.old_state = [0] * self.env_dim
@@ -264,34 +262,33 @@ class UpperAgents:
         if self.peri_mode == 'PI':
 
             accu = self.old_state[0] * config['accu_max']
+            (a, a_sup), _ = self.get_action_all(self.old_state)      # 仍记录PI控制结果
 
             if accu <= config['accu_activate']:     # PN车辆未达到阈值时采用MP控制
-                self.accu_last = accu
+                self.record_action(a)
                 for signal in self.peridata.peri_signals.values():
                     signal.reset()
                 return True
             else:
-                (self.a, a_sup), is_expert = self.get_action_all(self.old_state)
-                a = self.a
-                a_veh, a_sup_veh = a * config['cycle_time'], a_sup * config['cycle_time']
-                print(f"Optimal inflow vehicle: {a_veh}, upper bound: {a_sup_veh}")
-                self.ordered_action.append(a)
-                estimate_inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a,
-                                                                     action_bound=a_sup)
-                self.estimated_inflow.append(estimate_inflow)
+                print(f"Critical inflow: {a * config['cycle_time']}, upper bound: {a_sup * config['cycle_time']}")
+                self.a = a
+                # final action under PI/PI-Cordon/PI-Balance
+                inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode,
+                                                            action=a,
+                                                            action_bound=a_sup)
+                self.record_action(inflow)
                 self.perimeter.set_full_program()
                 return False
 
         # Learning-based controller
         else:       # 'DDPG' # 'DQN' # 'C_DQN' # 'Expert'
-            self.a, is_expert = self.get_action_all(self.old_state)
-            a = self.a      # veh/s
+            a, is_expert = self.get_action_all(self.old_state)
+            self.a = a     # veh/s
             a_sup = self.a
             # a = self._action_coordinate_transformation(self.max_green, self.a)
-            self.ordered_action.append(a)
 
-            estimate_inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a, action_bound=a_sup)
-            self.estimated_inflow.append(estimate_inflow)
+            inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode, action=a, action_bound=a_sup)
+            self.ordered_inflow.append(inflow)
 
             self.perimeter.set_full_program()
             return False
@@ -310,7 +307,7 @@ class UpperAgents:
             # print(f'###{e}: testing ####')
 
         elif self.action_type == 'PI':
-            a: tuple = self.get_action(old_state)
+            a: tuple = self.get_action(old_state)       # tuple: (action, action_sup)
             is_expert = False
             # if self.peri_action_mode =='decentralize':
             #     a = np.array([a] * self.act_dim)
@@ -416,6 +413,10 @@ class UpperAgents:
 
         for key in self.metric_list:
             self.record_epis[key].append(list(upper_metric[key]))
+
+    def record_action(self, action):
+        # to be implemented in subclasses
+        pass
 
     def train(self, cur_epis, n_jobs):
         '''replay to train the NN of upper level
@@ -633,9 +634,6 @@ class UpperAgents:
         # tot waiting time for each perimeter
         metric['peri_waiting_tot'] = edge_data['peri_waiting_tot']
 
-        ''' Ordered inflow '''
-        metric['ordered_inflow'] = self.ordered_action
-
         ''' cumulative green on perimeter '''
         # for mov_type, green_record in self.cumul_green.items():
         #     green_evolve = [sum(green_record[:i + 1]) for i in range(len(green_record))]
@@ -643,8 +641,8 @@ class UpperAgents:
         metric['cumul_green'] = self.cumul_green
         metric['cumul_throughput'] = self.cumul_throughput
 
-        ''' Estimated inflow by signal control model '''
-        metric['estimated_inflow'] = self.estimated_inflow
+        ''' ordered inflow by signal control model '''
+        metric['ordered_inflow'] = self.ordered_inflow
 
         return metric
 
@@ -765,8 +763,8 @@ class UpperAgents:
         self.buffer.memorize(state, action, reward, done, new_state, penalty)
 
     def _fill_metric_values(self, metric_field, metric_name=None):
-        if len(metric_field) < len(self.estimated_inflow):
-            len_short = len(self.estimated_inflow) - len(metric_field)
+        if len(metric_field) < len(self.ordered_inflow):
+            len_short = len(self.ordered_inflow) - len(metric_field)
             # TODO: 完善处理方式
             if metric_name:     # outflow
                 complete_field = np.concatenate([np.zeros(len_short), metric_field])
@@ -1384,11 +1382,16 @@ class MFD_PI(UpperAgents):
         a_sup = max(a_sup, self.q_min)
 
         # 4. update and record
-        self.q_last = a  # update the inflow
-        self.q_record.append(a)  # record the actions
+        # self.q_last = a  # update the inflow
+        # self.q_record.append(a)  # record the actions
         self.accu_last = accu  # update the accu
 
         return a, a_sup
+
+    def record_action(self, action):
+        self.q_last = action
+        self.q_record.append(action)
+        self.ordered_inflow.append(action * config['cycle_time'])       # veh
 
     def save_weights(self, path):
         pass

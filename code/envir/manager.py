@@ -349,10 +349,9 @@ class Trainer():
         self.record_fields['peri_outflow_vehs'] = upper_metric['peri_outflow_vehs']
         self.record_fields['peri_waiting_tot'] = upper_metric['peri_waiting_tot']
         self.record_fields['peri_waiting_mean'] = upper_metric['peri_waiting_mean']
-        self.record_fields['peri_ordered_flow'] = upper_metric['ordered_inflow']
+        self.record_fields['peri_ordered_inflow'] = upper_metric['ordered_inflow']
         self.record_fields['peri_cumul_green'] = upper_metric['cumul_green']
         self.record_fields['peri_cumul_throughput'] = upper_metric['cumul_throughput']
-        self.record_fields['peri_estimate_inflow'] = upper_metric['estimated_inflow']
         # lower level data (interval: config['lower_agent_step'])
         self.record_fields['cumul_reward_lower'] = lower_metric['tsc_perveh_delay_mean']
         self.record_fields['PN_accu_epis'] = lower_metric['PN_accu']
@@ -402,8 +401,8 @@ class Trainer():
         #                  self.agent_upper.action_type, self.n_jobs, self.agent_upper.perimeter.inflow_movements)
 
         ''' ordered inflow and actual inflow '''
-        # plot_ordered_real_action(self.config, self.record_fields['peri_estimate_inflow'],
-        #                          self.record_fields['peri_entered_vehs'], self.cur_epis, self.n_jobs)
+        plot_ordered_real_action(self.config, self.record_fields['peri_ordered_inflow'],
+                                 self.record_fields['peri_entered_vehs'], self.cur_epis, self.n_jobs)
 
         ''' PN level '''
         # MFD
