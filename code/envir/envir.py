@@ -110,10 +110,10 @@ class Simulator():
         done = False
         if self._step >= self.max_steps:
             done = True
-            print(self.vehicle_loc)
-            for signal_id, signal in self.peridata.peri_signals.items():
-                for lane_id, lane in signal.in_lanes.items():
-                    print(f'Queue on lane {lane_id} at the end of simulation: {lane.queueing_vehicles}')
+            # print(self.vehicle_loc)
+            # for signal_id, signal in self.peridata.peri_signals.items():
+            #     for lane_id, lane in signal.in_lanes.items():
+            #         print(f'Queue on lane {lane_id} at the end of simulation: {lane.queueing_vehicles}')
 
         ## get data output
         #  1. for OAM
