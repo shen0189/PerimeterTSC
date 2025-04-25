@@ -28,8 +28,12 @@ class WebsterController:
                                   'west': (2, 5),
                                   'east': (1, 6)}
             for arm, lane_groups in arm_lanegroup_dict.items():
-                volume = sum(real_arrival_rate['_'.join((signal_id, str(lg_id)))] for lg_id in lane_groups)
-                capacity = sum(signal.lane_groups['_'.join((signal_id, str(lg_id)))].saturation_flow_rate for lg_id in lane_groups)
+                volume = sum(real_arrival_rate['_'.join((signal_id, str(lg_id)))]
+                             for lg_id in lane_groups
+                             if '_'.join((signal_id, str(lg_id))) in real_arrival_rate)
+                capacity = sum(signal.lane_groups['_'.join((signal_id, str(lg_id)))].saturation_flow_rate
+                               for lg_id in lane_groups
+                               if '_'.join((signal_id, str(lg_id))) in signal.lane_groups)
                 vc_ratio[arm] = volume / capacity
             # green time proportional to the vc_ratio
             total_green_time = signal.cycle - config['yellow_duration'] * 4 - config['min_green'] * 4
@@ -66,6 +70,8 @@ class WebsterController:
                 green_duration = green_time[arm]
                 for lane_group_idx in arm_lanegroup_dict[arm]:
                     lane_group_id = '_'.join((signal_id, str(lane_group_idx)))
+                    if lane_group_id not in signal.lane_groups:
+                        continue
                     lane_group = signal.lane_groups[lane_group_id]
                     lane_group.green_start = green_start
                     lane_group.green_duration = green_duration
