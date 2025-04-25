@@ -529,9 +529,11 @@ def plot_ordered_real_action(config, ordered_inflow, actual_inflow, e, n_jobs):
     plt.xlabel('time')
     plt.ylabel('inflow (veh)')
     # plt.title('Estimated and actual inflow')
-    plt.plot(np.arange(0, len(ordered_inflow) * 100, 100), ordered_inflow, '-', c='b', label='Ordered inflow')
-    plt.plot(np.arange(0, len(actual_inflow) * 100, 100), actual_inflow, '-', c='g', label='Actual inflow')
-    plt.ylim((0, max(max(ordered_inflow), max(actual_inflow)) * 1.2))  # 统一scale
+    step = config['max_steps'] / len(actual_inflow)
+    if len(ordered_inflow):
+        plt.plot(np.arange(0, config['max_steps'], step), ordered_inflow, '-', c='b', label='Ordered inflow')
+    plt.plot(np.arange(0, config['max_steps'], step), actual_inflow, '-', c='g', label='Actual inflow')
+    plt.ylim((0, max(max(ordered_inflow + [0]), max(actual_inflow)) * 1.2))  # 统一scale
     plt.legend()
     plt.grid()
     if e % n_jobs == 0:
