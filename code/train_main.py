@@ -4,6 +4,7 @@ from __future__ import print_function
 import os
 import numpy as np
 import matplotlib
+import yaml
 
 from utils.result_processing import plot_accu_critic
 
@@ -543,6 +544,9 @@ def train_simple_config(config):
     train(container)
 
 
+def load_experiment_configs():
+    with open('code/experiment_configs.yaml', 'r') as f:
+        return yaml.safe_load(f)
 
 
 if __name__ == "__main__":
@@ -572,11 +576,7 @@ if __name__ == "__main__":
     #     train()
 
     # 仅在不同轮次中更新的参数
-    experiment_configs = [
-        {"accu_critic": 4500},
-        {"accu_critic": 5000},
-        {"accu_critic": 5500},
-    ]
+    experiment_configs = load_experiment_configs()
 
     for i, config_updates in enumerate(experiment_configs, 1):
         print(f"\nStarting experiment round {i}")
