@@ -1,5 +1,4 @@
 import gurobipy as gp
-from utils.utilize import config, set_sumo
 from peritsc.perimeterdata import PeriSignals
 from typing import Dict, List
 
@@ -12,7 +11,8 @@ class WebsterController:
     """
 
     """
-    def __init__(self, peri_data: PeriSignals):
+    def __init__(self, peri_data: PeriSignals, config):
+        self.config = config
         self.peri_data = peri_data
 
     def signal_optimize(self):
@@ -36,20 +36,20 @@ class WebsterController:
                                if '_'.join((signal_id, str(lg_id))) in signal.lane_groups)
                 vc_ratio[arm] = volume / capacity
             # green time proportional to the vc_ratio
-            total_green_time = signal.cycle - config['yellow_duration'] * 4 - config['min_green'] * 4
+            total_green_time = signal.cycle - self.config['yellow_duration'] * 4 - self.config['min_green'] * 4
             if sum(vc_ratio.values()) == 0:
-                green_time = {arm: int(total_green_time / 4) + config['min_green'] for arm in arm_lanegroup_dict}
-                total_green_diff = sum(green_time.values()) - total_green_time - config['min_green'] * 4
+                green_time = {arm: int(total_green_time / 4) + self.config['min_green'] for arm in arm_lanegroup_dict}
+                total_green_diff = sum(green_time.values()) - total_green_time - self.config['min_green'] * 4
                 green_time['east'] -= total_green_diff
             else:
                 green_ratio = {arm: vc_ratio[arm] / sum(vc_ratio.values()) for arm in arm_lanegroup_dict}
-                green_time = {arm: int(green_ratio[arm] * total_green_time) + config['min_green'] for arm in arm_lanegroup_dict}
+                green_time = {arm: int(green_ratio[arm] * total_green_time) + self.config['min_green'] for arm in arm_lanegroup_dict}
                 # check the maximum green time
                 excess_time, valid_directions = 0, []
                 for arm, green_duration in green_time.items():
-                    if green_duration > config['max_green']:
-                        excess_time += green_duration - config['max_green']
-                        green_time[arm] = config['max_green']
+                    if green_duration > self.config['max_green']:
+                        excess_time += green_duration - self.config['max_green']
+                        green_time[arm] = self.config['max_green']
                     else:
                         valid_directions.append(arm)
                 total_valid_green_ratio = sum(green_ratio[arm] for arm in valid_directions)
@@ -60,7 +60,7 @@ class WebsterController:
                     for arm in valid_directions:
                         green_time[arm] += int(excess_time * green_ratio[arm] / total_valid_green_ratio)
             # final check
-            total_green_diff = sum(green_time.values()) - total_green_time - config['min_green'] * 4
+            total_green_diff = sum(green_time.values()) - total_green_time - self.config['min_green'] * 4
             green_time['east'] -= total_green_diff
             # phase sequence: discharge the arm with the highest vc_ratio first
             phase_sequence = sorted(vc_ratio, key=vc_ratio.get, reverse=True)
@@ -81,7 +81,7 @@ class WebsterController:
                     for lane_id, lane in lane_group.lanes.items():
                         lane.green_start = [green_start]
                         lane.green_duration = [green_duration]
-                green_start += green_duration + config['yellow_duration']
+                green_start += green_duration + self.config['yellow_duration']
             for connection in signal.connections.values():
                 connection.update_timing()
 

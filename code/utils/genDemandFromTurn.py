@@ -1,14 +1,13 @@
 import numpy as np
 import sumolib
 import subprocess
-from utils.utilize import config
 import random
 import xml.etree.ElementTree as ET
 from utils.result_processing import plot_demand_from_turn
 
 class TrafficGeneratorFromTurn:
 
-    def __init__(self):
+    def __init__(self, config):
         self.turn_file_name = config['turnfile_dir']
         self.turn_probability = {}
         self.edge_flow_for_each_type = []      # each element corresponds to a demand type
@@ -78,7 +77,8 @@ class TrafficGeneratorFromTurn:
             # allocate flow
             for i in range(len(config['Demand_interval'])):
                 edge_flow = flow_allocation(demand_info['VolumeProfile'][i] * demand_info['multiplier'],
-                                            demand_info['FromEdges'], scale=scale)
+                                            demand_info['FromEdges'],
+                                            config=config, scale=scale)
                 for edge, flow in edge_flow.items():
                     flow_dict[edge].append(flow)
             self.edge_flow_for_each_type.append(flow_dict)
@@ -165,7 +165,7 @@ class TrafficGeneratorFromTurn:
         
 
 
-def flow_allocation(link_flow: int, edge_list: list, scale: float = 0.):
+def flow_allocation(link_flow: int, edge_list: list, config, scale: float = 0.,):
     """
     Allocate flow to each edge given the total flow
 

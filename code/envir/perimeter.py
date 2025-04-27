@@ -1,6 +1,5 @@
 import traci
 import numpy as np
-from utils.utilize import config
 from peritsc.perimeterdata import PeriSignals
 from peritsc.signal_controller import PeriSignalController
 from peritsc.timeslot_controller import TimeSlotPeriSignalController
@@ -11,7 +10,10 @@ from typing import Dict
 
 
 class Peri_Agent():
-    def __init__(self, tsc_peri, peridata: PeriSignals):
+    def __init__(self, tsc_peri, peridata: PeriSignals, config):
+
+        self.config = config
+
         # control mode
         self.distribution_mode = config['peri_control_mode']
         self.signal_phase_mode = config['peri_signal_phase_mode']
@@ -130,9 +132,9 @@ class Peri_Agent():
         # 1. Update the arrival rate and queue of each lane of last step
         for signal_id, signal in self.peridata.peri_signals.items():
             for lane_id, lane in signal.in_lanes.items():
-                lane.update_traffic_state()
+                lane.update_traffic_state(self.config['updatestep'])
             for lane_id, lane in signal.out_lanes.items():
-                lane.update_remain_capacity()
+                lane.update_remain_capacity(self.config['vehicle_length'])
 
         # 2. Aggregate the parameters to each lane-group
         for signal_id, signal in self.peridata.peri_signals.items():
@@ -142,7 +144,8 @@ class Peri_Agent():
         # 3. Update the target state and the queue coefficient for each lane group (for PI upper mode)
         if peri_mode == 'PI':
             for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
-                inflow_lanegroup.update_target_state(self.peridata.peri_signals[inflow_lanegroup.signal].cycle)
+                inflow_lanegroup.update_target_state(self.peridata.peri_signals[inflow_lanegroup.signal].cycle,
+                                                     self.config['spillover_critical_ratio'])
             target_inflow_list = [lg.target_inflow for lg in self.peridata.peri_lane_groups.values()]
             target_optimal_diff = sum(target_inflow_list) - action
             for inflow_lanegroup_id, inflow_lanegroup in self.peridata.peri_lane_groups.items():
@@ -152,12 +155,13 @@ class Peri_Agent():
 
         # 4. Optimize the signal plan of all perimeter intersections
         if peri_mode == 'Webster':
-            controller = WebsterController(self.peridata)
+            controller = WebsterController(self.peridata, self.config)
         else:
             if self.signal_phase_mode == 'Slot':
-                controller = TimeSlotPeriSignalController(self.peridata, action, self.slot_num)
+                controller = TimeSlotPeriSignalController(self.peridata, action, action_bound,
+                                                          self.config, self.slot_num)
             else:
-                controller = PeriSignalController(self.peridata, action, action_bound)
+                controller = PeriSignalController(self.peridata, action, action_bound, self.config)
         estimate_inflow = controller.signal_optimize()
 
         # 5. record green time data
@@ -193,7 +197,7 @@ class Peri_Agent():
         """
         for signal_id in self.peridata.peri_signals:
             phases = []
-            for state, duration in config['normal_plan'].items():
+            for state, duration in self.config['normal_plan'].items():
                 phases.append(traci.trafficlight.Phase(duration, state))
             tsc = self.info[signal_id]['tsc']
             logic = tsc.logic

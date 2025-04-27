@@ -2,13 +2,12 @@ import numpy as np
 # from numpy.core.defchararray import index
 import random
 from random import choice
-from utils.utilize import config
 from utils.static_utilize import get_NodeConfig
 from utils.result_processing import plot_demand
 
 
 class TrafficGenerator():
-    def __init__(self):
+    def __init__(self, config):
         self.demand_config = config['DemandConfig']  # the peak demand
         self.demand_interval_sec = config['Demand_interval_sec']
         self.demand_interval_total = config['Demand_interval_total'] 

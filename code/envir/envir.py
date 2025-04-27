@@ -3,7 +3,6 @@ import sumolib
 import traci
 from utils.trafficsignalcontroller import TrafficSignalController
 from peritsc.perimeterdata import PeriSignals
-from utils.utilize import config
 from utils.result_processing import plot_MFD
 import numpy as np
 from utils.genDemandBuffer import TrafficGenerator
@@ -20,7 +19,7 @@ from typing import Dict, Union
 from copy import deepcopy
 
 class Simulator():
-    def __init__(self, TrafficGen, netdata, peridata: PeriSignals):
+    def __init__(self, TrafficGen, netdata, peridata: PeriSignals, config):
         # self.min_green = config['min_green']
         # self.max_green = config['max_green']
         # self.states = config['states']
@@ -30,6 +29,7 @@ class Simulator():
         self.state_steps = config['state_steps']
         self.netdata = netdata
         self.peridata: PeriSignals = peridata
+        self.config = config
 
         ''' -info_interval:  10 sec for data collection 
             -control_interval: 100sec for a new action
@@ -190,7 +190,7 @@ class Simulator():
                         if vehicle_id not in self.vehicle_routes:
                             self.vehicle_routes[vehicle_id] = traci.vehicle.getRoute(vehicle_id)
 
-                        if speed < 0.1 or pos > lane.length - config['record_distance']:
+                        if speed < 0.1 or pos > lane.length - self.config['record_distance']:
                             route = self.vehicle_routes[vehicle_id]
                             assert edge in route
                             edge_idx = route.index(edge)
@@ -220,7 +220,7 @@ class Simulator():
                                     target_lane.virtual_queue_vehicles.add(vehicle_id)
 
                             # entered veh (arrival rate)
-                            if pos > lane.length - config['record_distance']:  # 不记录过于上游的车辆
+                            if pos > lane.length - self.config['record_distance']:  # 不记录过于上游的车辆
                                 if vehicle_id not in self.vehicle_loc:
                                     target_lane.entered_vehicles.add(vehicle_id)    # 直接计入target lane, 避免变道问题
                                     self.vehicle_loc[vehicle_id] = [signal_id, target_lane_id]
@@ -230,7 +230,7 @@ class Simulator():
                                         target_lane.entered_vehicles.add(vehicle_id)
                                         self.vehicle_loc[vehicle_id] = [signal_id, target_lane_id]
 
-        if self._step % config['updatestep'] == 0:
+        if self._step % self.config['updatestep'] == 0:
             # 每个interval结束时, 更新queue_vehicle, 删除离开该lane的车辆
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
@@ -251,7 +251,7 @@ class Simulator():
                                 lane.virtual_queue_vehicles.discard(vehicle)
                                 lane.queueing_vehicles.add(vehicle)
 
-        if self._step % config['detector_interval'] == 0:
+        if self._step % self.config['detector_interval'] == 0:
             # 每个检测器interval结束时记录车道的驶离车辆数（用于判断特殊情况, 可以有1-2辆的误差）
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.in_lanes.items():
@@ -259,7 +259,7 @@ class Simulator():
                     lane_outflow = traci.inductionloop.getLastIntervalVehicleNumber(detector_id)
                     lane.outflow_vehicle_num += lane_outflow
             # out-out/in-out类车辆驶出PN后删除route记录
-            for edge in config['Edge_Peri_out']:
+            for edge in self.config['Edge_Peri_out']:
                 for lane in range(3):
                     detector_id = '_'.join((str(edge), str(lane), 'in'))
                     pass_vehs = traci.inductionloop.getLastIntervalVehicleIDs(detector_id)
@@ -267,7 +267,7 @@ class Simulator():
                         self.vehicle_loc.pop(veh, None)
                         self.vehicle_routes.pop(veh, None)
 
-        if self._step % config['cycle_time'] == 0:
+        if self._step % self.config['cycle_time'] == 0:
             # 周期结束时获取出口道的最末端停车车辆位置
             for signal_id, signal in self.peridata.peri_signals.items():
                 for lane_id, lane in signal.out_lanes.items():
@@ -314,14 +314,14 @@ if False:
             ### 1.accumulation of PN after normalization
             if state_type == 'accu':
                 accu_PN, _ = self.Metric.get_accu(info_inter_flag=True)
-                accu_PN = accu_PN / config['accu_max'] # normalize
+                accu_PN = accu_PN / self.config['accu_max'] # normalize
                 # self.state_dict['accu'].append(accu_PN)
                 state.append(accu_PN)
 
             ### 2. accumulation of buffer after normalization
             elif state_type == 'accu_buffer':
                 _, accu_buffer = self.Metric.get_accu(info_inter_flag=True)
-                accu_buffer = accu_buffer / config['accu_buffer_max'] # normalize
+                accu_buffer = accu_buffer / self.config['accu_buffer_max'] # normalize
                 # self.state_dict['accu_buffer'].append(accu_buffer)
                 state.append(accu_buffer)
 
@@ -344,7 +344,7 @@ if False:
             elif state_type == 'future_demand':
                 cycle_index = int(self.info_update_index/self.Metric.info_length)
                 demand_nextstep = self.Metric.get_demand_nextstep(cycle_index)
-                demand_nextstep = demand_nextstep / config[
+                demand_nextstep = demand_nextstep / self.config[
                     'Demand_state_max']  # normalization
                 # self.state_dict['future_demand'].append(demand_nextstep)
                 state.append(demand_nextstep)
@@ -352,7 +352,7 @@ if False:
             ### 6. entered vehicles from perimeter
             elif state_type == 'entered_vehs':
                 entered_veh = self.Metric.get_entered_veh_control_interval()
-                entered_veh = entered_veh / config['entered_veh_max'] # normalize
+                entered_veh = entered_veh / self.config['entered_veh_max'] # normalize
                 # self.state_dict['entered_vehs'].append(entered_veh) 
                 state.append(entered_veh)
 
@@ -360,7 +360,7 @@ if False:
             ### 7. network mean speed
             elif state_type == 'network_mean_speed':
                 network_mean_speed, _ = self.Metric.get_PN_speed_production(info_inter_flag=True)
-                network_mean_speed = network_mean_speed / config['network_mean_speed_max'] # normalize
+                network_mean_speed = network_mean_speed / self.config['network_mean_speed_max'] # normalize
                 # self.state_dict['network_mean_speed'].append(network_mean_speed)
                 state.append(network_mean_speed)
 
@@ -368,7 +368,7 @@ if False:
             ### 8. network PN halting vehicles 
             elif state_type == 'network_halting_vehicles':
                 _, PN_halt_vehs = self.Metric.get_halting_vehs(info_inter_flag=True)
-                PN_halt_vehs = PN_halt_vehs/config['PN_halt_vehs_max']
+                PN_halt_vehs = PN_halt_vehs/self.config['PN_halt_vehs_max']
                 # self.state_dict['network_halting_vehicles'].append(PN_halt_vehs)
                 state.append(PN_halt_vehs)
 
@@ -377,7 +377,7 @@ if False:
             elif state_type == 'buffer_halting_vehicles':
                 buffer_halt_vehs, _ = self.Metric.get_halting_vehs(info_inter_flag=True)
                 # print(f'buffer_halt_vehs = {buffer_halt_vehs}')
-                buffer_halt_vehs = buffer_halt_vehs/config['buffer_halt_vehs_max']
+                buffer_halt_vehs = buffer_halt_vehs/self.config['buffer_halt_vehs_max']
                 # self.state_dict['network_halting_vehicles'].append(buffer_halt_vehs)
                 state.append(buffer_halt_vehs)
 
@@ -428,7 +428,7 @@ if False:
         # print(self.reward_list)
         traci.close()
         plot_MFD(self.accu_list, self.throuput_list, self.cycle_time, e,
-                 config['Peri_mode'])
+                 self.config['Peri_mode'])
 
     def simulate(self, steps_todo):
         """
@@ -483,7 +483,7 @@ if False:
         ## 1. production within control interval ( speed * veh )
         _, production_control_interval  = self.Metric.get_PN_speed_production()
         # print(f'Production = {production_control_interval}')
-        reward = production_control_interval / config['production_control_interval_max']
+        reward = production_control_interval / self.config['production_control_interval_max']
 
         return reward
 

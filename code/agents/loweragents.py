@@ -12,7 +12,6 @@ from nn.critic import CriticLower
 from peritsc.perimeterdata import PeriSignals
 # from utils.stats import gather_stats
 # from utils.networks import tfSummary, OrnsteinUhlenbeckProcess
-from utils.utilize import config
 from utils.result_processing import plot_last_critic_loss, plot_critic_loss
 import traci
 import datetime
@@ -23,12 +22,13 @@ today = datetime.datetime.today()
 class LowerAgents:
     """ A class of lower base agent
     """
-    def __init__(self, tsc, netdata, peridata: PeriSignals):
+    def __init__(self, tsc, netdata, peridata: PeriSignals, config):
         """ Initialization
         """
         self.outputfile = config['lane_outputfile_dir']
         self.queuefile = config['queuefile_dir']
         self.tripfile = config['tripfile_dir']
+        self.config = config
 
         ## network config
         self.tsc = tsc
@@ -152,8 +152,8 @@ class LowerAgents:
         
 
         if self.lower_mode == 'OAM' and self.action_type =='Explore':
-            self.epsilon = config['epsilon_lower'] * self.explore_decay**(e // n_jobs)
-            self.epsilon = max([self.epsilon, config['explore_lb']])
+            self.epsilon = self.config['epsilon_lower'] * self.explore_decay**(e // n_jobs)
+            self.epsilon = max([self.epsilon, self.config['explore_lb']])
         else:
             self.epsilon = 0
 
@@ -181,11 +181,11 @@ class LowerAgents:
         ''' plot loss during trainning
         '''
         # 1. critic loss
-        plot_critic_loss(self.critic.qloss_list, 'lower', self.mode)
+        plot_critic_loss(self.config['plots_path_name'], self.critic.qloss_list, 'lower', self.mode)
 
         # 2. critic loss of last step
         self.critic.last_qloss_list.append(self.critic.qloss_list[-1])
-        plot_last_critic_loss(self.critic.last_qloss_list, 'lower')
+        plot_last_critic_loss(self.config['plots_path_name'], self.critic.last_qloss_list, 'lower')
 
         # print(loss_epis)
         # 3. critic loss of each epis
@@ -195,12 +195,12 @@ class LowerAgents:
     def save_weights(self, path):
         if self.lower_mode in ['OAM']:
 
-            self.critic.save(path)
+            self.critic.save(self.config, path)
 
     def load_weights(self, path):
         if self.lower_mode in ['OAM']:
 
-            self.critic.load_weights(path)
+            self.critic.load_weights(self.config, path)
 
 
 ## for init class of lower level
@@ -375,7 +375,8 @@ class LowerAgents:
             if tsc.cur_phase == tsc.prev_phase: ## keep
                 tsc.cur_phase_time += self.control_interval
                 if tl_id in self.peridata.peri_signals:
-                    self.peridata.update_green_from_phase_index(tl_id, tsc.cur_phase_idx, self.control_interval)
+                    self.peridata.update_green_from_phase_index(tl_id, tsc.cur_phase_idx,
+                                                                self.control_interval, self.config)
             else: ## switch
                 ## record
                 tsc.phase_time_list.append(tsc.cur_phase_time) # phase time
@@ -385,7 +386,8 @@ class LowerAgents:
                 tsc.cur_phase_time = self.control_interval-self.yellow_duration
                 if tl_id in self.peridata.peri_signals:
                     self.peridata.update_green_from_phase_index(tl_id, tsc.cur_phase_idx,
-                                                                self.control_interval - self.yellow_duration)
+                                                                self.control_interval - self.yellow_duration,
+                                                                self.config)
 
 ## metric
     def get_metric_each_epis(self, lane_data, queue_data: dict, trip_data: dict):
@@ -395,7 +397,7 @@ class LowerAgents:
             2. individual node level (each tsc)
             3. controller node level (controlled nodes in the network)
         '''
-        step = config['lower_agent_step']
+        step = self.config['lower_agent_step']
         
         lower_metric = {}
 
@@ -532,10 +534,10 @@ class OAM(LowerAgents):
     '''
 
 
-    def __init__(self, tsc, netdata, tau=config['tau']):
-        super().__init__(tsc, netdata)
+    def __init__(self, tsc, netdata, peridata, config):
+        super().__init__(tsc, netdata, peridata, config)
         ## feature
-
+        tau = config['tau']
 
         """RL parameters"""
         self.lr_C = config['lr_C_lower']
@@ -776,8 +778,8 @@ class OAM(LowerAgents):
 
 
 class MaxPressure(LowerAgents):
-    def __init__(self, tsc, netdata, peridata):
-        super().__init__(tsc, netdata, peridata)
+    def __init__(self, tsc, netdata, peridata, config):
+        super().__init__(tsc, netdata, peridata, config)
 
     def get_state(self):
         batch_state = []
@@ -816,8 +818,8 @@ class MaxPressure(LowerAgents):
 
 class FixTime(LowerAgents):
 
-    def __init__(self, tsc, netdata, peridata):
-        super().__init__(tsc, netdata, peridata)
+    def __init__(self, tsc, netdata, peridata, config):
+        super().__init__(tsc, netdata, peridata, config)
         self.program_id = '0'  if config['network'] in ['Grid', 'FullGrid'] else 2
         # '2' -- acturated, max_dur = 90 sec
         # '3' -- acturated, max_dur = 45 sec

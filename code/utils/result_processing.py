@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-from utils.utilize import config
 import pickle
 import numpy as np
 import os
@@ -262,7 +261,7 @@ def plot_demand_from_turn(config):
     plt.close()
 
 
-def plot_reward(reward):
+def plot_reward(config, reward):
     plt.xlabel('episode')
     plt.ylabel('reward')
     plt.title('Reward')
@@ -271,7 +270,7 @@ def plot_reward(reward):
     plt.close()
 
 
-def plot_penalty(penalty):
+def plot_penalty(config, penalty):
     plt.xlabel('episode')
     plt.ylabel('penalty')
     plt.title('buffer_queue along training')
@@ -280,7 +279,7 @@ def plot_penalty(penalty):
     plt.close()
 
 
-def plot_obj_reward_penalty(obj, penalty, reward):
+def plot_obj_reward_penalty(obj, config, penalty, reward):
     # reward
     plt.xlabel('episode')
     plt.ylabel('reward')
@@ -326,7 +325,7 @@ def plot_obj_reward_penalty(obj, penalty, reward):
     plt.close()
 
 
-def plot_accu_critic(accu_list):
+def plot_accu_critic(config, accu_list):
     # accu_critic
     plt.xlabel('episode')
     plt.ylabel('n_critical')
@@ -341,7 +340,7 @@ def plot_accu_critic(accu_list):
     plt.close()
 
 
-def plot_computime(computime):
+def plot_computime(config, computime):
     plt.xlabel('episode')
     plt.ylabel('computational time (secs)')
     plt.title('computational time of each episode')
@@ -400,14 +399,14 @@ def plot_accu(config, accu, e, n_jobs):
 #     plt.close()
 
 
-def plot_critic_loss(critic_loss, level, mode):
+def plot_critic_loss(path, critic_loss, level, mode):
     plt.xlabel('epoch')
     plt.ylabel('mse')
     plt.title('Critic loss')
     plt.plot(range(len(critic_loss)), critic_loss)
 
     file_name = f"{level}_{mode}_CriticLoss.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic', file_name)
+    plot_path = os.path.join(path, 'critic', file_name)
     plt.savefig(plot_path)
 
     # plt.savefig(f"{config['plots_path_name']}critic\{level}_{mode}_CriticLoss.png")
@@ -415,33 +414,33 @@ def plot_critic_loss(critic_loss, level, mode):
     plt.close()
 
 
-def plot_critic_loss_cur_epis(critic_loss, cur_epis, lr):
+def plot_critic_loss_cur_epis(path, critic_loss, cur_epis, lr):
     plt.xlabel('epoch')
     plt.ylabel('mse')
     plt.title('Critic loss')
     plt.plot(range(len(critic_loss)), critic_loss)
 
     file_name = f"CriticLoss_e{cur_epis}.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic', file_name)
+    plot_path = os.path.join(path, 'critic', file_name)
     plt.savefig(plot_path)
 
     plt.close()
 
 
-def plot_last_critic_loss(last_critic_loss, level):
+def plot_last_critic_loss(path, last_critic_loss, level):
     plt.xlabel('epoch')
     plt.ylabel('mse')
     plt.title('Last Critic loss')
     plt.plot(range(len(last_critic_loss)), last_critic_loss)
 
     file_name = f"LastCriticLoss_{level}.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic', file_name)
+    plot_path = os.path.join(path, 'critic', file_name)
     plt.savefig(plot_path)
 
     plt.close()
 
 
-def plot_throughput(throughput):
+def plot_throughput(path, throughput):
     ''' Plot throughput in the training for each episode
     '''
     sum_throughput = [sum(i) for i in throughput]
@@ -449,7 +448,7 @@ def plot_throughput(throughput):
     plt.ylabel('throughput (veh/hour)')
     plt.title('Throughput')
     plt.plot(range(len(sum_throughput)), sum_throughput, 'o-')
-    plt.savefig(f"{config['plots_path_name']}metric/throughput.png")
+    plt.savefig(f"{path}metric/throughput.png")
     plt.close()
 
 
@@ -548,23 +547,23 @@ def plot_ordered_real_action(config, ordered_inflow, actual_inflow, e, n_jobs):
     plt.close()
 
 
-def plot_q_value(q_value):
+def plot_q_value(path, q_value):
     plt.xlabel('epoch')
     plt.ylabel('q_value')
     plt.title('Actor loss')
     plt.plot(range(len(q_value)), q_value)
-    plt.savefig(f"{config['plots_path_name']}critic\ActorLoss.png")
+    plt.savefig(f"{path}critic\ActorLoss.png")
     plt.close()
 
 
-def plot_q_value_improve(q_value_improve):
+def plot_q_value_improve(path, q_value_improve):
     plt.xlabel('epoch')
     plt.ylabel('q_value_improve')
     plt.title('q_value improvement of each update')
     plt.plot(range(len(q_value_improve)), q_value_improve)
 
     file_name = "q_improve.png"
-    plot_path = os.path.join(config['plots_path_name'], 'critic', file_name)
+    plot_path = os.path.join(path, 'critic', file_name)
     plt.savefig(plot_path)
     plt.close()
 
@@ -598,7 +597,7 @@ def plot_tsc_delay(config, tsc_all, e, n_jobs):
     plt.close()
 
 
-def plot_lower_reward_epis(reward_epis):
+def plot_lower_reward_epis(path, reward_epis):
     ''' plot lower level reward of each epis
     '''
     # reward
@@ -608,7 +607,7 @@ def plot_lower_reward_epis(reward_epis):
     plt.plot(range(len(reward_epis)), reward_epis, 'o-')
 
     file_name = "lower_reward.png"
-    plot_path = os.path.join(config['plots_path_name'], 'metric', file_name)
+    plot_path = os.path.join(path, 'metric', file_name)
 
     plt.savefig(plot_path)
     plt.close()
@@ -769,7 +768,7 @@ def plot_peri_queue_progression(config, queue_epis: dict, max_length, e, n_jobs)
     fig_width = pixel_width * queue_evolve.shape[1]
     fig_height = pixel_width * queue_evolve.shape[0]
 
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))    # type:figure.Figure, axes.Axes
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     cax = ax.imshow(queue_evolve, cmap='coolwarm', aspect='equal', vmin=0, vmax=max_length*0.9)
     cbar = fig.colorbar(cax, ax=ax)     # 设置颜色条
     cbar.set_label('Queue length (m)')
@@ -793,7 +792,7 @@ def plot_peri_queue_progression(config, queue_epis: dict, max_length, e, n_jobs)
 
 
 ################# SAVE #######################
-def save_data_train_upper(agent_upper, agent_lower):
+def save_data_train_upper(agent_upper, agent_lower, config):
     ''' save objective, reward, penalty, throughput along the training process of upper agents
     '''
     data_train = {}

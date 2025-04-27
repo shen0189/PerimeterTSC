@@ -12,7 +12,7 @@ from agents.loweragents import OAM, FixTime, MaxPressure
 from agents.upperagents import DDPG, DQN, Expert, Static, C_DQN, MFD_PI
 from utils.networkdata import NetworkData
 from peritsc.perimeterdata import PeriSignals
-from utils.utilize import Test, set_sumo, config, save_config, set_train_path, write_log, set_test_path
+from utils.utilize import Test, set_sumo, save_config, set_train_path, write_log, set_test_path, reset_config
 from utils.result_processing import plot_lower_reward_epis, save_data_train_upper, plot_MFD, plot_actions, \
     plot_accu, plot_computime, plot_obj_reward_penalty
 import timeit
@@ -29,7 +29,19 @@ from multiprocessing import Pool, cpu_count
 from envir.manager import Trainer
 
 
-def simulate_one_episode_train(e, config, netdata, accu_crit = None):
+class Container:
+
+    def __init__(self, env, agent_lower, agent_upper, sumo_cmd, netdata, peridata, config):
+        self.env = env
+        self.agent_upper = agent_upper
+        self.agent_lower = agent_lower
+        self.sumo_cmd = sumo_cmd
+        self.netdata = netdata
+        self.peridata = peridata
+        self.config = config
+
+
+def simulate_one_episode_train(e, container, accu_crit = None):
     ''' simulation with one episode  *** Multiple process ***
         *** 1. Parallel: This is the simulation being 'paralleled'
         *** 2. Configure: Many arguments need to be redefined or passed in, because the file will be reloaded
@@ -48,6 +60,11 @@ def simulate_one_episode_train(e, config, netdata, accu_crit = None):
     # np.random.seed(int(time()*1000 % 12345))
     # np.random.seed(int(time() * 10000) % 100)
     #################### Prepare for Simulation with MP ##########################
+
+    config = container.config
+    sumo_cmd = container.sumo_cmd
+    netdata = container.netdata
+    peridata = container.peridata
 
     ## 1. Redefine number of jobs
     n_jobs = config['n_jobs']
@@ -77,20 +94,20 @@ def simulate_one_episode_train(e, config, netdata, accu_crit = None):
     # print(sumo_cmd_e)
 
     ## 3. Re-load the agent and environment
-    agent_upper = Agent_upper   
-    agent_lower = Agent_lower  
+    agent_upper = container.agent_upper
+    agent_lower = container.agent_lower
     if accu_crit:
         agent_upper.accu_crit = accu_crit
     # env = Env
     if config['network'] == 'FullGrid':
-        trafficGen = TrafficGeneratorFromTurn()
+        trafficGen = TrafficGeneratorFromTurn(config)
     else:
-        trafficGen = TrafficGenerator()
+        trafficGen = TrafficGenerator(config)
     if n_jobs>0:
         route_file_name = trafficGen.route_file_name.split('/')
         route_file_name[1] += str(e % n_jobs + 1)
         trafficGen.route_file_name = '/'.join(route_file_name)
-    env = Simulator(trafficGen, netdata, peridata)
+    env = Simulator(trafficGen, netdata, peridata, config)
 
     trainer = Trainer (env, agent_lower, agent_upper, sumo_cmd_e, e, n_jobs, config)
     
@@ -100,13 +117,15 @@ def simulate_one_episode_train(e, config, netdata, accu_crit = None):
 
     return buffer_upper, buffer_lower, upper_metric, cumul_reward_lower
 
-def train():
+
+def train(container):
     ''' train the RL controller with 'multiple process'
     '''
-    ## 1. set the agent and environment
-    agent_upper = Agent_upper   
-    agent_lower = Agent_lower   
-    env = Env
+
+    ## 1. set the agent and environment by unpack the container
+    agent_upper = container.agent_upper
+    agent_lower = container.agent_lower
+    config = container.config
 
     ## 2. set the number of jobs: -1 = all cores; 0 = single process; 1+ = MP
     n_jobs = config['n_jobs']
@@ -139,7 +158,7 @@ def train():
             ## 4.a.1 simulation with MP
             
             pool = Pool(n_jobs)
-            simu_return = [pool.apply_async(func=simulate_one_episode_train, args=(e + i, config, netdata, agent_upper.accu_crit)) for i in range(n_jobs)]
+            simu_return = [pool.apply_async(func=simulate_one_episode_train, args=(e + i, container, agent_upper.accu_crit)) for i in range(n_jobs)]
             pool.close()
             pool.join()
 
@@ -184,7 +203,7 @@ def train():
         ## 4.b train with single process
         else:
             buffer_upper, buffer_lower, upper_metric, lower_metric \
-                = simulate_one_episode_train(e, config, netdata, agent_upper.accu_crit)
+                = simulate_one_episode_train(e, container, agent_upper.accu_crit)
             accu_batch.extend(upper_metric['accu'])
             flow_batch.extend(upper_metric['flow'])
             
@@ -194,10 +213,11 @@ def train():
 
         ## 5. plots along trainning process
         # upper
-        plot_obj_reward_penalty(agent_upper.record_epis['cul_obj'], agent_upper.record_epis['cul_penalty'], agent_upper.record_epis['cul_reward'])
+        plot_obj_reward_penalty(agent_upper.record_epis['cul_obj'], config,
+                                agent_upper.record_epis['cul_penalty'], agent_upper.record_epis['cul_reward'])
         # plot_throughput(agent_upper.throughput_episode)
         # lower
-        plot_lower_reward_epis(agent_lower.record_epis['tsc_perveh_delay_mean'])
+        plot_lower_reward_epis(config['plots_path_name'], agent_lower.record_epis['tsc_perveh_delay_mean'])
 
 
         ## 6. process new memory, save memory buffer to the path
@@ -218,7 +238,7 @@ def train():
         ## 8. record computational time
         simulation_time = round(timeit.default_timer() - start_time, 1)
         agent_upper.computime_episode.append(simulation_time)
-        plot_computime(agent_upper.computime_episode)
+        plot_computime(config, agent_upper.computime_episode)
         print(f"###### simulation time: {simulation_time}")
         # print(f"###### explore_std: {agent.explore_std}")
 
@@ -235,20 +255,21 @@ def train():
             agent_upper.fit_mfd(accu_batch, flow_batch)
             ncrit, Gneq = agent_upper.cal_ncritic()
             agent_upper.update_ncritic(ncrit)
-            plot_accu_critic(agent_upper.accu_crit_list)
+            plot_accu_critic(config, agent_upper.accu_crit_list)
 
 
         ## 11. save accu and throughput of all the episodes
-        save_data_train_upper(agent_upper, agent_lower)
+        save_data_train_upper(agent_upper, agent_lower, config)
 
     return results
 
-def test():
+def test(container):
     ''' train the RL controller with 'multiple process'
     '''
     ## 1. set the agent and environment
-    agent = Agent   
-    env = Env
+    agent = container.agent
+    env = container.env
+    config = container.config
     tester = Test()
 
     ## 2. set the number of jobs: -1 = all cores; 0 = single process; 1+ = MP
@@ -300,7 +321,7 @@ def test():
     return results
 
 # not used
-def simulate_one_episode_test(e, config):
+def simulate_one_episode_test(e, container):
     ''' simulation with one episode  *** Multiple process ***
         *** 1. Parallel: This is the simulation being 'paralleled'
         *** 2. Configure: Many arguments need to be redefined or passed in, because the file will be reloaded
@@ -319,6 +340,11 @@ def simulate_one_episode_test(e, config):
     # np.random.seed(int(time()*1000 % 12345))
     # np.random.seed(int(time() * 10000) % 100)
     #################### Prepare for Simulation with MP ##########################
+
+    config = container.config
+    netdata = container.netdata
+    peridata = container.peridata
+    sumo_cmd = container.sumo_cmd
 
     ## 1. Redefine number of jobs
     n_jobs = config['n_jobs']
@@ -340,14 +366,14 @@ def simulate_one_episode_test(e, config):
         # sumo_cmd_e[-1] = error_file_name
 
     ## 3. Re-load the agent and environment
-    agent = Agent
+    agent = container.agent
     # env = Env
-    trafficGen = TrafficGenerator()
+    trafficGen = TrafficGenerator(config)
     if n_jobs>0:
         route_file_name = trafficGen.route_file_name.split('/')
         route_file_name[1] += str(e % n_jobs + 1)
         trafficGen.route_file_name = '/'.join(route_file_name)
-    env = Simulator(trafficGen)
+    env = Simulator(trafficGen, netdata, peridata, config)
 
     ## set random seeds
     mod_num = random.randint(0,9999)
@@ -437,67 +463,84 @@ def simulate_one_episode_test(e, config):
 
     return  e, cumul_obj, cumul_reward, cumul_penalty, accu_episode, throughput_episode, env.Perimeter.green_time
 
-## 1. set sumo cmd
-sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])
-# print(sumo_cmd)
 
-## 2. initialize demand generator & netdata & peridata
-# initialize perimeter signals
-peridata = PeriSignals(config['netfile_dir'], sumo_cmd)
-peridata.get_basic_inform()
-if config['upper_mode'] in ['PI'] and config['peri_signal_phase_mode'] in ['Unfixed']:
-    peridata.get_conflict_matrix()
-    # peridata.check_conflict_matrix()
+def train_simple_config(config):
 
-nd = NetworkData(config['netfile_dir'], sumo_cmd, peridata)
-netdata = nd.get_net_data()
-tsc, tsc_peri = nd.update_netdata()
+    ## 1. set sumo cmd
+    sumo_cmd = set_sumo(config)
+    # print(sumo_cmd)
 
-if config['network'] == 'Grid':
-    TrafficGen = TrafficGenerator()
-    TrafficGen.gen_demand(config)
-elif config['network'] == 'FullGrid':
-    TrafficGen = TrafficGeneratorFromTurn()
-    # 1. 生成转向概率及需求
-    TrafficGen.generate_turn_probability(config, netdata)
-    TrafficGen.generate_flow(config)
-    # 2. 写入文件
-    TrafficGen.generate_turn_file(config)
-    TrafficGen.generate_flow_file(config)
-    TrafficGen.generate_trip_file(config)
+    ## 2. initialize demand generator & netdata & peridata
+    # initialize perimeter signals
+    peridata = PeriSignals(config['netfile_dir'], sumo_cmd, config)
+    peridata.get_basic_inform(config)
+    if config['upper_mode'] in ['PI'] and config['peri_signal_phase_mode'] in ['Unfixed']:
+        peridata.get_conflict_matrix()
+        # peridata.check_conflict_matrix()
 
-## 3. init envir
-Env = Simulator(TrafficGen, netdata, peridata)
+    nd = NetworkData(config['netfile_dir'], sumo_cmd, peridata, config)
+    netdata = nd.get_net_data()
+    tsc, tsc_peri = nd.update_netdata()
 
-## 4. initialize tsc controller (upper/lower)
-# upper
-if config['upper_mode'] == 'DDPG':
-    # DDPG controller
-    Agent_upper = DDPG(tsc_peri, netdata, peridata)
+    if config['network'] == 'Grid':
+        TrafficGen = TrafficGenerator(config)
+        TrafficGen.gen_demand(config)
+    elif config['network'] == 'FullGrid':
+        TrafficGen = TrafficGeneratorFromTurn(config)
+        # 1. 生成转向概率及需求
+        TrafficGen.generate_turn_probability(config, netdata)
+        TrafficGen.generate_flow(config)
+        # 2. 写入文件
+        TrafficGen.generate_turn_file(config)
+        TrafficGen.generate_flow_file(config)
+        TrafficGen.generate_trip_file(config)
+    else:
+        raise ValueError(f"Unknown network type: {config['network']}")
 
-elif config['upper_mode'] == 'DQN': 
-    # DQN controller
-    Agent_upper = DQN(tsc_peri, netdata, peridata)
-elif config['upper_mode'] == 'Expert' :
-    Agent_upper = Expert(tsc_peri, netdata, peridata)
-elif config['upper_mode'] == 'C_DQN' :
-    Agent_upper = C_DQN(tsc_peri, netdata, peridata)
-elif config['upper_mode'] == 'PI' :
-    Agent_upper = MFD_PI(tsc_peri, netdata, peridata)
-# elif config['upper_mode'] == 'Static' :
-else:
-    Agent_upper = Static(tsc_peri, netdata, peridata)
+    ## 3. init envir
+    Env = Simulator(TrafficGen, netdata, peridata, config)
 
+    ## 4. initialize tsc controller (upper/lower)
+    # upper
+    if config['upper_mode'] == 'DDPG':
+        # DDPG controller
+        Agent_upper = DDPG(tsc_peri, netdata, peridata, config)
 
-# lower
-if config['lower_mode'] == 'OAM':
-    Agent_lower = OAM(tsc, netdata)
-elif config['lower_mode'] == 'FixTime':
-    Agent_lower = FixTime(tsc, netdata, peridata)
-elif config['lower_mode'] == 'MaxPressure':
-    Agent_lower = MaxPressure(tsc, netdata, peridata)
+    elif config['upper_mode'] == 'DQN':
+        # DQN controller
+        Agent_upper = DQN(tsc_peri, netdata, peridata, config)
+    elif config['upper_mode'] == 'Expert' :
+        Agent_upper = Expert(tsc_peri, netdata, peridata, config)
+    elif config['upper_mode'] == 'C_DQN' :
+        Agent_upper = C_DQN(tsc_peri, netdata, peridata, config)
+    elif config['upper_mode'] == 'PI' :
+        Agent_upper = MFD_PI(tsc_peri, netdata, peridata, config)
+    # elif config['upper_mode'] == 'Static' :
+    else:
+        Agent_upper = Static(tsc_peri, netdata, peridata, config)
 
+    # lower
+    if config['lower_mode'] == 'OAM':
+        Agent_lower = OAM(tsc, netdata, peridata, config)
+    elif config['lower_mode'] == 'FixTime':
+        Agent_lower = FixTime(tsc, netdata, peridata, config)
+    elif config['lower_mode'] == 'MaxPressure':
+        Agent_lower = MaxPressure(tsc, netdata, peridata, config)
 
+    ## 5. set path and begin training
+    config['plots_path_name'], config['models_path_name'] = set_train_path(config['plots_path_name'], 'plot')
+    config['stats_path_name'] = set_train_path(config['stats_path_name'], 'stats')
+    config['cache_path_name'] = set_test_path(config['cache_path_name'])
+
+    ## save config file and log file
+    save_config(config)
+    write_log(config)
+
+    container = Container(env=Env, agent_lower=Agent_lower, agent_upper=Agent_upper,
+                          sumo_cmd=sumo_cmd, netdata=netdata, peridata=peridata,
+                          config=config)
+
+    train(container)
 
 
 
@@ -507,24 +550,35 @@ if __name__ == "__main__":
     mp.set_start_method('spawn')    # fork
     ## train / test the controller
     # if config['mode'] == 'test':
-    if False:
-        config['plots_path_name'] = set_train_path(config['plots_path_name'], 'plot')
-        config['models_path_name'] = set_train_path(config['models_path_name'], 'model')
-        config['cache_path_name'] = set_test_path(config['cache_path_name'])
+    # if False:
+    #     config['plots_path_name'] = set_train_path(config['plots_path_name'], 'plot')
+    #     config['models_path_name'] = set_train_path(config['models_path_name'], 'model')
+    #     config['cache_path_name'] = set_test_path(config['cache_path_name'])
+    #
+    #     ## save config file and log file
+    #     save_config(config)
+    #     write_log(config)
+    #
+    #     test()
+    # else:
+    #     config['plots_path_name'], config['models_path_name'] = set_train_path(config['plots_path_name'], 'plot')
+    #     config['stats_path_name'] = set_train_path(config['stats_path_name'], 'stats')
+    #     config['cache_path_name'] = set_test_path(config['cache_path_name'])
+    #
+    #     ## save config file and log file
+    #     save_config(config)
+    #     write_log(config)
+    #
+    #     train()
 
-        ## save config file and log file
-        save_config(config)
-        write_log(config)
+    # 仅在不同轮次中更新的参数
+    experiment_configs = [
+        {"accu_critic": 4500},
+        {"accu_critic": 5000},
+        {"accu_critic": 5500},
+    ]
 
-        test()
-    else:
-        config['plots_path_name'], config['models_path_name'] = set_train_path(config['plots_path_name'], 'plot')
-        config['stats_path_name'] = set_train_path(config['stats_path_name'], 'stats')
-        config['cache_path_name'] = set_test_path(config['cache_path_name'])
-        
-        ## save config file and log file
-        save_config(config)
-        write_log(config)
-        
-        train()
-
+    for i, config_updates in enumerate(experiment_configs, 1):
+        print(f"\nStarting experiment round {i}")
+        new_config = reset_config(config_updates)
+        train_simple_config(new_config)

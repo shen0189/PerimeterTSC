@@ -1,4 +1,3 @@
-from utils.utilize import config
 from keras.constraints import NonNeg
 from keras.layers import Input, Dense, concatenate, LSTM, Reshape, BatchNormalization, Lambda, Flatten, Concatenate, Multiply, Add
 from keras.optimizers import Adam
@@ -98,7 +97,7 @@ class CriticUpper(Critic):
 
         return Model([state, action], out)
 
-    def save(self, path, best=False):
+    def save(self, config, path, best=False):
         # self.model.save_weights(path + 'critic_eval.h5')
         # self.target_model.save_weights(path + 'critic_target.h5')
 
@@ -119,7 +118,7 @@ class CriticUpper(Critic):
         # self.model.save(path+ 'critic.h5')
         # print(self.model.get_weights())
 
-    def load_weights(self, path):
+    def load_weights(self, config, path):
         # eval_path = path + 'critic_eval.h5'
         eval_path = path + f"critic_eval_{config['network']}.h5"
         # target_path = path + "critic_target.h5"

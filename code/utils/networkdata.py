@@ -5,7 +5,6 @@ import inspect
 import sumolib
 import traci
 from utils.trafficsignalcontroller import TrafficSignalController
-from utils.utilize import config
 
 
 if 'SUMO_HOME' in os.environ:
@@ -28,15 +27,16 @@ except ImportError:
 import numpy as np
 
 class NetworkData:
-    def __init__(self, net_fp, sumo_cmd, peridata):
-        print(net_fp) 
+    def __init__(self, net_fp, sumo_cmd, peridata, config):
+        self.config = config
         self.net = sumolib.net.readNet(net_fp)
         self.peridata = peridata
         ###get edge data
         self.node_data, self.tls_data = self._get_node_data(self.net)
-        self.edge_data = self._get_edge_data(self.net)
+        self.edge_data = self._get_edge_data(self.net, config)
         self.lane_data = self._get_lane_data(self.net, self.edge_data)
         self.sumo_cmd = sumo_cmd
+
 
         print("SUCCESSFULLY GENERATED NET DATA")
 
@@ -71,7 +71,7 @@ class NetworkData:
         return origins
 
     ### helper functions: read the network
-    def _get_edge_data(self, net):
+    def _get_edge_data(self, net, config):
         edges = net.getEdges()
         edge_data = {str(edge.getID()):{} for edge in edges}
         PN_length = 0
@@ -200,8 +200,14 @@ class NetworkData:
 
         traci.start(self.sumo_cmd)
         tl_junc = self._get_traffic_lights()
-        tsc = { tl_id:TrafficSignalController( tl_id, junc_id, 'train', self.netdata, self.peridata)
-                        for tl_id, junc_id in tl_junc.items() }
+        tsc = {tl_id: TrafficSignalController(
+            tsc_id=tl_id,
+            junc_id=junc_id,
+            mode='train',
+            netdata=self.netdata,
+            peridata=self.peridata,
+            config=self.config
+        ) for tl_id, junc_id in tl_junc.items()}
 
         for t_id, t_value in tsc.items():
             self.netdata['tls'][t_value.junc_id]['incoming_lanes'] = t_value.incoming_lanes
@@ -217,14 +223,14 @@ class NetworkData:
 
         return  tsc, tsc_peri
 
-    def update_perimeter(self,tsc):
+    def update_perimeter(self, tsc):
         ''' get the tsc of the perimeter
         '''
         tsc_peri=[]
         for t_id, t_value in tsc.items():
-            if t_id in config['Peri_info'].keys():
+            if t_id in self.config['Peri_info'].keys():
                 tsc_peri.append(tsc[t_id])
-                config['Peri_info'][t_id]['tsc'] = t_value
+                self.config['Peri_info'][t_id]['tsc'] = t_value
 
                 # get program
                 logic = traci.trafficlight.getAllProgramLogics(t_id)[0]

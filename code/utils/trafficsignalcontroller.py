@@ -2,7 +2,6 @@ import os, sys, copy
 
 import numpy as np
 from numpy.core.fromnumeric import mean, sort
-from utils.utilize import config
 from peritsc.perimeterdata import PeriSignals
 from collections import deque
 
@@ -17,16 +16,18 @@ import traci
 
 from metric.trafficmetrics import TrafficMetrics
 
+
 class TrafficSignalController:
     """Abstract base class for all traffic signal controller.
 
     Build your own traffic signal controller by implementing the follow methods.
     """
-    def __init__(self, tsc_id, junc_id, mode, netdata, peridata):
+    def __init__(self, tsc_id, junc_id, mode, netdata, peridata, config):
         self.id = tsc_id
         self.junc_id = junc_id
         # self.netdata = netdata
         self.peridata: PeriSignals = peridata
+        self.config = config
         self.node = netdata['node'][self.junc_id]
         self.incoming_edges = netdata['node'][self.junc_id]['incoming']
         self._get_incoming_outgoing_lanes(netdata)
@@ -240,14 +241,14 @@ class TrafficSignalController:
 
         if self.upper_mode != 'N-MP':
             return np.vstack(np.zeros(len(self.incoming_lanes))[np.newaxis, :])
-        if self.PN_accu <= config['accu_critic']:
+        if self.PN_accu <= self.config['accu_critic']:
             return np.vstack(np.zeros(len(self.incoming_lanes))[np.newaxis, :])
-        if self.junc_id not in config['Node']['NodePeri']:
+        if self.junc_id not in self.config['Node']['NodePeri']:
             return np.vstack(np.zeros(len(self.incoming_lanes))[np.newaxis, :])
 
         # parameters
-        PN_density = self.PN_accu / config['PN_total_length']
-        PN_critical_density = config['accu_critic'] / config['PN_total_length']
+        PN_density = self.PN_accu / self.config['PN_total_length']
+        PN_critical_density = self.config['accu_critic'] / self.config['PN_total_length']
 
         signal = self.peridata.peri_signals[self.junc_id]
         inlane_peri_weight = []
@@ -255,8 +256,8 @@ class TrafficSignalController:
             inlane = signal.in_lanes[inlane_id]
             if 'inflow' in inlane.type:
                 hal_veh = traci.lane.getLastStepHaltingNumber(inlane_id)
-                sigmoid = 1 / (1 + np.exp(-hal_veh / config['chi'])) - 0.5
-                weight = config['ksi'] * pow((PN_density - PN_critical_density), 2) * sigmoid * 1000
+                sigmoid = 1 / (1 + np.exp(-hal_veh / self.config['chi'])) - 0.5
+                weight = self.config['ksi'] * pow((PN_density - PN_critical_density), 2) * sigmoid * 1000
                 # print(f'The weight on lane {inlane_id} is {weight}')
             else:
                 weight = 0
@@ -320,11 +321,11 @@ if False:
 
         # self.update(data)
         # self.increment_controller()
-        delay = np.zeros(config['max_steps'])
+        delay = np.zeros(self.config['max_steps'])
         for d in lane_delay.values():
             delay[d[:,0].astype(int)] += d[:,1]
         
-        self.ep_rewards = np.reshape(delay, (-1, config['control_interval'])).sum(axis=-1)
+        self.ep_rewards = np.reshape(delay, (-1, self.config['control_interval'])).sum(axis=-1)
         # print(self.ep_rewards)
 
     def get_metrics(self):

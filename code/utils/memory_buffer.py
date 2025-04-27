@@ -3,7 +3,6 @@ import numpy as np
 
 from collections import deque, Counter
 # from .sumtree import SumTree
-from utils.utilize import config
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -15,10 +14,11 @@ class MemoryBuffer(object):
     """ Memory Buffer Helper class for Experience Replay
     using a double-ended queue or a Sum Tree (for PER)
     """
-    def __init__(self, buffer_size, reward_delay_steps, penalty_delay_steps,\
+    def __init__(self, config, buffer_size, reward_delay_steps, penalty_delay_steps,\
          reward_norm_bool, multi_step, gamma, sample_mode, with_per=False):
         """ Initialization
         """
+        self.config = config
         self.with_per = with_per
         self.buffer_size = buffer_size
         self.reward_delay_steps = reward_delay_steps
@@ -351,7 +351,7 @@ class MemoryBuffer(object):
         plt.xlabel('objective value')
         plt.ylabel('number')
         plt.title('objective_one_step distribution')
-        plt.savefig(f"{config['plots_path_name']}metric/object_onestep_dist.png")
+        plt.savefig(f"{self.config['plots_path_name']}metric/object_onestep_dist.png")
         plt.close()
 
         ## plot histgram of objective after normalization
@@ -360,7 +360,7 @@ class MemoryBuffer(object):
         plt.ylabel('number')
         plt.xlim((int(self.object_one_step_min), math.ceil(self.object_one_step_max))) 
         plt.title('objective distribution after normalization')
-        plt.savefig(f"{config['plots_path_name']}metric/object_onestep_dist_norm.png")
+        plt.savefig(f"{self.config['plots_path_name']}metric/object_onestep_dist_norm.png")
         plt.close()
 
         ## plot histgram of reward
@@ -368,7 +368,7 @@ class MemoryBuffer(object):
         plt.xlabel('reward')
         plt.ylabel('number')
         plt.title('reward distribution')
-        plt.savefig(f"{config['plots_path_name']}metric/reward_onestep_dist.png")
+        plt.savefig(f"{self.config['plots_path_name']}metric/reward_onestep_dist.png")
         plt.close()
 
         ## plot histgram of penalty
@@ -376,7 +376,7 @@ class MemoryBuffer(object):
         plt.xlabel('penalty')
         plt.ylabel('number')
         plt.title('penalty distribution')
-        plt.savefig(f"{config['plots_path_name']}metric/penalty_onestep_dist.png")
+        plt.savefig(f"{self.config['plots_path_name']}metric/penalty_onestep_dist.png")
         plt.close()
 
         ''' multi-step objective distribution
@@ -388,7 +388,7 @@ class MemoryBuffer(object):
             plt.ylabel('number')
             plt.title('multi-step obj dist')
             plt.xlim((int(self.object_multi_step_min), math.ceil(self.object_multi_step_max))) 
-            plt.savefig(f"{config['plots_path_name']}metric/obj_multistep_dist.png")
+            plt.savefig(f"{self.config['plots_path_name']}metric/obj_multistep_dist.png")
             plt.close()
 
     def action_distri_plot(self, e):
@@ -396,11 +396,11 @@ class MemoryBuffer(object):
         # a_all = np.around([i[1] for i in self.buffer_CA], 1)
         a_all = [i[1] for i in self.buffer_CA]
 
-        if config['peri_action_mode'] == 'decentralize':
+        if self.config['peri_action_mode'] == 'decentralize':
             # DDPG controller
             pass
 
-        elif config['peri_action_mode'] == 'centralize':
+        elif self.config['peri_action_mode'] == 'centralize':
             counter = Counter(a_all)
             sort_counter_key = sorted(list(counter.keys()))
             sort_counter_value = [counter[k] for k in sort_counter_key]
@@ -409,13 +409,13 @@ class MemoryBuffer(object):
             plt.xlabel('action')
             plt.ylabel('number')
             plt.title('actions distribution')
-            plt.savefig(f"{config['plots_path_name']}metric/action_distri.png")
+            plt.savefig(f"{self.config['plots_path_name']}metric/action_distri.png")
             plt.close()
 
     def action_reward_distri_plot(self):
         ''' plot histgram of the reward of each action
         '''
-        if config['peri_action_mode'] == 'centralize':
+        if self.config['peri_action_mode'] == 'centralize':
             ''' single-step reward dist plot
             '''
             r_all_origin = [b[2] + b[5] for b in self.buffer_CA]  # raw reward
@@ -436,7 +436,7 @@ class MemoryBuffer(object):
                     plt.ylabel('number')
                     plt.ylim((0, self.count_CA/8)) 
                     plt.title(f'reward distribution after normalization of action = {a}')
-                    plt.savefig(f"{config['plots_path_name']}metric/obj_dist_norm_onestep_{a}.png")
+                    plt.savefig(f"{self.config['plots_path_name']}metric/obj_dist_norm_onestep_{a}.png")
                     plt.close()
 
             else:
@@ -450,7 +450,7 @@ class MemoryBuffer(object):
                     plt.xlim((int(self.object_one_step_min)-1, math.ceil(self.object_one_step_max))) 
                     plt.ylim((0,self.count_CA/8)) 
                     plt.title(f'original objective distribution of action = {a}')
-                    plt.savefig(f"{config['plots_path_name']}metric/obj_dist_raw_onestep_{a}.png")
+                    plt.savefig(f"{self.config['plots_path_name']}metric/obj_dist_raw_onestep_{a}.png")
                     plt.close()
 
             ''' multi-step reward dist plot
@@ -466,7 +466,7 @@ class MemoryBuffer(object):
                     plt.xlim((int(self.object_multi_step_min), math.ceil(self.object_multi_step_max))) 
                     plt.ylim((0,self.count_CA/8)) 
                     plt.title(f'raw multi-step obj dist of action = {a}')
-                    plt.savefig(f"{config['plots_path_name']}metric/obj_dist_raw_multistep_{a}.png")
+                    plt.savefig(f"{self.config['plots_path_name']}metric/obj_dist_raw_multistep_{a}.png")
                     plt.close()
 
     def reward_plot(self, config, num, e):
@@ -527,33 +527,33 @@ class MemoryBuffer(object):
         plt.plot(range(new_memory_number), actions, 'k>-', label=f"actions")
         plt.legend()
 
-        plt.savefig(f"{config['plots_path_name']}credit_assignment.png")
+        plt.savefig(f"{self.config['plots_path_name']}credit_assignment.png")
         plt.close()
 
     def plot_accu_reward(self):
         ''' Plot reward v.s accu of each simulation
         '''
         reward = [b[2]+b[5] for b in self.buffer_CA[-self.buffer_size:]]  # raw reward
-        accu = [b[0][0] * config['accu_max']  for b in self.buffer_CA[-self.buffer_size:]] 
+        accu = [b[0][0] * self.config['accu_max']  for b in self.buffer_CA[-self.buffer_size:]]
         # unit reform
         plt.xlabel('accu(veh)')
         plt.ylabel('one-step obj')
         plt.title(f'one-step obj v.s accu')
         plt.scatter(accu, reward)
-        plt.xlim((0., config['accu_max']))
+        plt.xlim((0., self.config['accu_max']))
         plt.ylim((-3., 3))
         # plt.plot(x1, y1, label='整体路网基本图')
         # plt.plot(x2, y2, label='子路网基本图')
         # plt.legend()
         # plt.show()
         plt.savefig(
-            f"{config['plots_path_name']}metric/accu_onestep-obj.png")
+            f"{self.config['plots_path_name']}metric/accu_onestep-obj.png")
         plt.close()
 
 class MemoryBuffer_Upper(MemoryBuffer):
-    def __init__(self, buffer_size, reward_delay_steps, penalty_delay_steps,\
+    def __init__(self, config, buffer_size, reward_delay_steps, penalty_delay_steps,\
          reward_norm_bool, multi_step, gamma, sample_mode, with_per=False):
-        super().__init__(buffer_size, reward_delay_steps, penalty_delay_steps,\
+        super().__init__(config, buffer_size, reward_delay_steps, penalty_delay_steps,\
          reward_norm_bool, multi_step, gamma, sample_mode, with_per=False)
 
         self.mode = 'Upper'
@@ -574,7 +574,7 @@ class MemoryBuffer_Upper(MemoryBuffer):
             self.count = 0
 
     def save(self):
-        np.save(f"{config['models_path_name']}memory_upper_{config['upper_mode']}.npy", self.buffer)
+        np.save(f"{self.config['models_path_name']}memory_upper_{self.config['upper_mode']}.npy", self.buffer)
         print(f'###### Upper Memory save: Success {self.count} ######')
 
     def memorize(self, state, action, reward,  done, new_state, penalty):
@@ -591,9 +591,9 @@ class MemoryBuffer_Upper(MemoryBuffer):
 
         
 class MemoryBuffer_Lower(MemoryBuffer):
-    def __init__(self, buffer_size, reward_delay_steps, penalty_delay_steps,\
+    def __init__(self, config, buffer_size, reward_delay_steps, penalty_delay_steps,\
          reward_norm_bool, multi_step, gamma, sample_mode, with_per=False):
-        super().__init__(buffer_size, reward_delay_steps, penalty_delay_steps,\
+        super().__init__(config, buffer_size, reward_delay_steps, penalty_delay_steps,\
          reward_norm_bool, multi_step, gamma, sample_mode, with_per=False)
         
         self.mode = 'Lower'
@@ -603,7 +603,7 @@ class MemoryBuffer_Lower(MemoryBuffer):
         self.count = 0
 
     def save(self):
-        np.save(f"{config['models_path_name']}memory_lower_{config['lower_mode']}.npy", self.buffer[-self.buffer_size:])
+        np.save(f"{self.config['models_path_name']}memory_lower_{self.config['lower_mode']}.npy", self.buffer[-self.buffer_size:])
         print(f'\n########### Lower Memory save: Success {min(self.count, self.buffer_size) } ###########')
 
     def memorize(self, state, action, reward, penalty, done, new_state, phase_matrix, phase_mask):

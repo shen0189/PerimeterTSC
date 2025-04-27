@@ -1,7 +1,7 @@
 import gurobipy as gp
 import numpy as np
 
-from utils.utilize import config, set_sumo
+from utils.utilize import set_sumo
 from peritsc.perimeterdata import PeriSignals
 from typing import Dict, List
 
@@ -15,13 +15,14 @@ class PeriSignalController:
     Optimize the signal plan given the inflow vehicles (action) under PI framework
     """
 
-    def __init__(self, peri_data: PeriSignals, action: float, action_bound: float):
+    def __init__(self, peri_data: PeriSignals, action: float, action_bound: float, config):
         """
         Args:
             peridata (PeriSignals): 记录边界交叉口信息的结构体
             action (float): 集计的metering rate (veh/s)
             action_bound (float): MFD决定的metering rate的上限 (veh/s)
         """
+        self.config = config
         # control mode
         self.distribution_mode = config['peri_control_mode']            # 'PI' # 'PI-Cordon' # 'PI-Tsi' # 'PI-Balance'
         self.signal_phase_mode = config['peri_signal_phase_mode']       # 'NEMA' # 'Unfixed'
@@ -52,7 +53,7 @@ class PeriSignalController:
                 #     lanegroup.check_queue_balance(config['cycle_time'])
         else:       # PI / PI-Cordon
             total_inflow = self.set_inflow_green(bounded=True, bound_type='critical')
-        print(f'Actual inflow vehicle number given by upper level model: {total_inflow * config["cycle_time"]}')
+        print(f'Actual inflow vehicle number given by upper level model: {total_inflow * self.config["cycle_time"]}')
 
         total_throughput = self.set_local_green()
         # for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
@@ -69,7 +70,7 @@ class PeriSignalController:
             return self.metering_rate
 
         # [Mode 2: PI-Cordon / PI-Tsi / PI-Balance]
-        cycle, sfr, yellow = config['cycle_time'], config['through_sfr'], config['yellow_duration']
+        cycle, sfr, yellow = self.config['cycle_time'], self.config['through_sfr'], self.config['yellow_duration']
         # maximal_action = config['network_maximal_inflow']
 
         # Multi-objective optimization
@@ -134,14 +135,14 @@ class PeriSignalController:
         if self.distribution_mode == 'PI-Tsi':
             # obj1: Difference between total inflow and required total inflow
             # Tsitsokas et al. (2021): 原文使用的是绿灯时长, 此处改用流率, 是否需要调整权重系数
-            obj += inflow_diff * inflow_diff * config['upper_fixed_weight']['gating']
+            obj += inflow_diff * inflow_diff * self.config['upper_fixed_weight']['gating']
             # obj += inflow_diff * inflow_diff * config['upper_fixed_weight']['gating'] * (config['cycle_time'] / config['saturation_flow_rate'])
             # obj2: Proportional to the observed queues
             for lanegroup_id, lanegroup in self.peri_data.peri_lane_groups.items():
                 m.addConstr(lanegroup_inflow_queue_ratio[lanegroup_id] == 1 - lanegroup_inflow[lanegroup_id] * cycle / (
                             lanegroup.total_queue + 1),
                             name=constr_name_attach(lanegroup_id, 'cal_inflow_queue_ratio'))
-                obj += config['upper_fixed_weight']['queue'] * lanegroup.total_queue * \
+                obj += self.config['upper_fixed_weight']['queue'] * lanegroup.total_queue * \
                        lanegroup_inflow_queue_ratio[lanegroup_id] * lanegroup_inflow_queue_ratio[lanegroup_id]
         elif self.distribution_mode in ['PI-Cordon', 'PI-Balance']:
             # obj1: Difference between total inflow and required total inflow
@@ -187,7 +188,7 @@ class PeriSignalController:
         决策变量：所有方向绿灯时长+绿灯启亮（+相序）
         目标：最大化吞吐量
         '''
-        cycle, yellow = config['cycle_time'], config['yellow_duration']
+        cycle, yellow = self.config['cycle_time'], self.config['yellow_duration']
         M = 1e5
         lambda_ = 1e2
         perimeter_total_throughput = 0     # 返回值
@@ -205,12 +206,12 @@ class PeriSignalController:
             m.setParam('OutputFlag', 0)
             m.setParam(gp.ParamConstClass.DualReductions, 0)
 
-            if config['network_version'] == 'GridBufferFull1' and signal_id in ['P11', 'P55']:
-                phase_sequences = config['phase_sequence_corner_type1']
-            elif config['network_version'] == 'GridBufferFull1' and signal_id in ['P15', 'P51']:
-                phase_sequences = config['phase_sequence_corner_type2']
+            if self.config['network_version'] == 'GridBufferFull1' and signal_id in ['P11', 'P55']:
+                phase_sequences = self.config['phase_sequence_corner_type1']
+            elif self.config['network_version'] == 'GridBufferFull1' and signal_id in ['P15', 'P51']:
+                phase_sequences = self.config['phase_sequence_corner_type2']
             else:
-                phase_sequences = config['phase_sequence']
+                phase_sequences = self.config['phase_sequence']
 
             movements = list(signal.movements)
             all_nema_modes = list(phase_sequences)
@@ -241,7 +242,7 @@ class PeriSignalController:
                 if 'inflow' in lane_group.type:
                     if lane_group.optimal_inflow <= lane_group.min_inflow:   # little queue & demand or little downstream capacity
                         for mov_id, mov in lane_group.movements.items():
-                            m.addConstr(movement_green_dur[mov_id] == config['min_green'],
+                            m.addConstr(movement_green_dur[mov_id] == self.config['min_green'],
                                         name=constr_name_attach(signal_id, mov_id, 'gated_min_inflow'))
                     else:
                         m.addConstr(inflow_throughput_diff[lane_group_id] == (
@@ -256,14 +257,14 @@ class PeriSignalController:
             # obj3: Maximize the (weighted) normalized throughput
             for lane_id, lane in signal.in_lanes.items():
                 if len(lane.movements) == 1:
-                    lane_flow_weight = config['flow_weight'][lane.type]
+                    lane_flow_weight = self.config['flow_weight'][lane.type]
                 else:
                     lane_flow_weight = 0
                     lane_dirs = [move.dir for move in lane.movements.values()]
-                    lane_dir_ratio = sum([config['TurnRatio']['EdgePeri'][lane_dir] for lane_dir in lane_dirs])
-                    dir_weight = {lane_dir: config['TurnRatio']['EdgePeri'][lane_dir] / lane_dir_ratio for lane_dir in lane_dirs}
+                    lane_dir_ratio = sum([self.config['TurnRatio']['EdgePeri'][lane_dir] for lane_dir in lane_dirs])
+                    dir_weight = {lane_dir: self.config['TurnRatio']['EdgePeri'][lane_dir] / lane_dir_ratio for lane_dir in lane_dirs}
                     for move in lane.movements.values():
-                        lane_flow_weight += dir_weight[move.dir] * config['flow_weight'][move.type]
+                        lane_flow_weight += dir_weight[move.dir] * self.config['flow_weight'][move.type]
                 # increase the weight for lanes with long queue
                 if lane.queue > 40:
                     queue_weight = 1.5
@@ -305,9 +306,9 @@ class PeriSignalController:
             #                 name=constr_name_attach(signal_id, lane_id, 'down_capacity'))
             # Constraint 4: Minimum / Maximum green duration
             for movement_id, movement in signal.movements.items():
-                m.addConstr(movement_green_dur[movement_id] <= config['max_green'],
+                m.addConstr(movement_green_dur[movement_id] <= self.config['max_green'],
                             name=constr_name_attach(signal_id, movement_id, 'max_green'))
-                m.addConstr(movement_green_dur[movement_id] >= config['min_green'],
+                m.addConstr(movement_green_dur[movement_id] >= self.config['min_green'],
                             name=constr_name_attach(signal_id, movement_id, 'min_green'))
             # Constraint 5: Phase order (Signal timing of movement)
             # Constraint 5.1: Phase order for NEMA
@@ -426,10 +427,11 @@ class PeriSignalController:
 
 if __name__ == '__main__':
 
-    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])
+    config = {}
 
-    peridata = PeriSignals(config['netfile_dir'], sumo_cmd)
-    peridata.get_basic_inform()
+    sumo_cmd = set_sumo(config)
+    peridata = PeriSignals('', sumo_cmd, config)
+    peridata.get_basic_inform(config)
     peridata.get_conflict_matrix()
 
 

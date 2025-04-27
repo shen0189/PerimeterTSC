@@ -205,7 +205,7 @@ def get_signals(tl):
 if __name__ == "__main__":
 
 
-    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])        
+    sumo_cmd = set_sumo(config)
     nd = NetworkData(config['netfile_dir'], sumo_cmd)
     netdata = nd.get_net_data()
     tsc, _ = nd.update_netdata()

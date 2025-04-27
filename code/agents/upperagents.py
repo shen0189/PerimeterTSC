@@ -1,6 +1,5 @@
 from bisect import bisect
 import datetime
-from utils.utilize import config
 from utils.result_processing import plot_critic_loss_cur_epis, plot_last_critic_loss, plot_critic_loss, plot_q_value, plot_q_value_improve
 from utils.memory_buffer import MemoryBuffer_Upper
 from peritsc.perimeterdata import PeriSignals
@@ -25,9 +24,10 @@ class UpperAgents:
     """ A class of upper base agent
     """
 
-    def __init__(self, tsc_peri, netdata, peridata: PeriSignals):
+    def __init__(self, tsc_peri, netdata, peridata: PeriSignals, config):
         """ Initialization
         """
+        self.config = config
         self.outputfile = config['edge_outputfile_dir']
         self.netdata = netdata
         self.peridata = peridata
@@ -98,16 +98,16 @@ class UpperAgents:
         self.qvalue_list, self.qvalue_improve, self.computime_episode = [], [], []
 
         # buffer
-        self.buffer = MemoryBuffer_Upper(config['buffer_size'], config['reward_delay_steps'], config['penalty_delay_steps'],
+        self.buffer = MemoryBuffer_Upper(config, config['buffer_size'], config['reward_delay_steps'], config['penalty_delay_steps'],
                                          config['reward_normalization'], config['multi-step'], config['gamma_multi_step'], config['sample_mode'])
 
         # metric
         self.info_interval = config['infostep']
-        self.metric = Metric(self.cycle_time, self.info_interval, self.netdata, self.peridata)
+        self.metric = Metric(self.cycle_time, self.info_interval, self.netdata, self.peridata, self.config)
 
         # perimeter
         self.tsc_peri = tsc_peri
-        self.perimeter = Peri_Agent(self.tsc_peri, self.peridata)
+        self.perimeter = Peri_Agent(self.tsc_peri, self.peridata, self.config)
         self.accu_last = 0
         self.accu_crit = None
 
@@ -115,7 +115,7 @@ class UpperAgents:
         ''' reset upper agent
         '''
         # perimeter
-        self.perimeter = Peri_Agent(self.tsc_peri, self.peridata)
+        self.perimeter = Peri_Agent(self.tsc_peri, self.peridata, self.config)
         self.peri_num = len(self.perimeter.info)
         self.info_update_index = 0
         self.perimeter.buffer_wait_vehs_tot = np.zeros(1)
@@ -158,9 +158,9 @@ class UpperAgents:
 
         # else:
         if self.action_type == 'Explore':
-            self.epsilon = config['epsilon'] * \
+            self.epsilon = self.config['epsilon'] * \
                 self.explore_decay**(e // n_jobs)
-            self.epsilon = max([self.epsilon, config['explore_lb']])
+            self.epsilon = max([self.epsilon, self.config['explore_lb']])
         else:
             self.epsilon = 0
 
@@ -212,7 +212,7 @@ class UpperAgents:
             if self.mode == 'train':
                 if n_jobs > 1 and e % n_jobs == 0:
                     self.action_type = 'Test'
-                elif e < n_jobs * config['expert_episode'] or (n_jobs > 1 and e % n_jobs == 1):
+                elif e < n_jobs * self.config['expert_episode'] or (n_jobs > 1 and e % n_jobs == 1):
                     self.action_type = 'Expert'
                 else:
                     self.action_type = 'Explore'
@@ -247,7 +247,7 @@ class UpperAgents:
 
         # change the signal program after given time for static controller
         if self.peri_mode == 'Static':
-            if step >= config['switch_signal_plan_step'] and self.perimeter.switch_to_normal_plan is False:
+            if step >= self.config['switch_signal_plan_step'] and self.perimeter.switch_to_normal_plan is False:
                 self.perimeter.set_normal_program_for_static()
                 self.perimeter.switch_to_normal_plan = True
             return False
@@ -261,16 +261,16 @@ class UpperAgents:
         # PI controller
         if self.peri_mode == 'PI':
 
-            accu = self.old_state[0] * config['accu_max']
+            accu = self.old_state[0] * self.config['accu_max']
             (a, a_sup), _ = self.get_action_all(self.old_state)      # 仍记录PI控制结果
 
-            if accu <= config['accu_activate']:     # PN车辆未达到阈值时采用MP控制
+            if accu <= self.config['accu_activate']:     # PN车辆未达到阈值时采用MP控制
                 self.record_action(a)
                 for signal in self.peridata.peri_signals.values():
                     signal.reset()
                 return True
             else:
-                print(f"Critical inflow: {a * config['cycle_time']}, upper bound: {a_sup * config['cycle_time']}")
+                print(f"Critical inflow: {a * self.config['cycle_time']}, upper bound: {a_sup * self.config['cycle_time']}")
                 self.a = a
                 # final action under PI/PI-Cordon/PI-Balance
                 inflow = self.perimeter.get_full_greensplit(peri_mode=self.peri_mode,
@@ -443,7 +443,7 @@ class UpperAgents:
         # get index
         insert_idx = bisect(self.best_epis['cul_obj'], upper_metric['cul_obj'])
 
-        if len(upper_metric['flow']) == (config['max_steps'] // config['cycle_time']):
+        if len(upper_metric['flow']) == (self.config['max_steps'] // self.config['cycle_time']):
             for key in self.metric_list:
                 self.best_epis[key].insert(insert_idx, list(upper_metric[key]))
                 self.best_epis[key] = self.best_epis[key][-self.best_num:]
@@ -504,7 +504,7 @@ class UpperAgents:
         PN_road_length_tot = 0
         PN_edge_length = []
 
-        for edge in config['Edge_PN']:
+        for edge in self.config['Edge_PN']:
             PN_road_length_tot += self.netdata['edge'][str(edge)]['length'] * len(
                 self.netdata['edge'][str(edge)]['lanes'])
             PN_edge_length.append(self.netdata['edge'][str(edge)]['length'])
@@ -519,11 +519,11 @@ class UpperAgents:
         env_dim = 0
         for state in self.states:
             if state in local_state:
-                env_dim += len(config['Peri_info'])
+                env_dim += len(self.config['Peri_info'])
             else:
                 env_dim += 1
 
-        return env_dim * config['state_steps']
+        return env_dim * self.config['state_steps']
 
     def _action_coordinate_transformation(self, upper_bound, action):
         """ Conduct the coordinate transform given the bounded action
@@ -539,7 +539,7 @@ class UpperAgents:
             ''' Translate the network inflow to the green time
             '''
 
-            action = action / config['flow_rate']
+            action = action / self.config['flow_rate']
 
             return action
 
@@ -660,7 +660,7 @@ class UpperAgents:
         # 1. production within control interval ( speed * veh )
         # _, production_control_interval  = self.metric.get_PN_speed_production()
         # # print(f'Production = {production_control_interval}')
-        # reward = production_control_interval / config['production_control_interval_max']
+        # reward = production_control_interval / self.config['production_control_interval_max']
         reward = 0.0001
         return reward
 
@@ -685,7 +685,7 @@ class UpperAgents:
             # 1.accumulation of PN after normalization
             if state_type == 'accu':
                 accu_PN, _ = self.metric.get_accu(info_inter_flag=True)
-                accu_PN = accu_PN / config['accu_max']  # normalize
+                accu_PN = accu_PN / self.config['accu_max']  # normalize
                 # self.state_dict['accu'].append(accu_PN)
                 state.append(accu_PN)
 
@@ -693,7 +693,7 @@ class UpperAgents:
             elif state_type == 'accu_buffer':
                 _, accu_buffer = self.metric.get_accu(info_inter_flag=True)
                 accu_buffer = accu_buffer / \
-                    config['accu_buffer_max']  # normalize
+                    self.config['accu_buffer_max']  # normalize
                 # self.state_dict['accu_buffer'].append(accu_buffer)
                 state.append(accu_buffer)
 
@@ -715,7 +715,7 @@ class UpperAgents:
             elif state_type == 'future_demand':
                 cycle_index = int(self.info_update_index)
                 demand_nextstep = self.metric.get_demand_nextstep(cycle_index)
-                demand_nextstep = demand_nextstep / config[
+                demand_nextstep = demand_nextstep / self.config[
                     'Demand_state_max']  # normalization
                 # self.state_dict['future_demand'].append(demand_nextstep)
                 state.append(demand_nextstep)
@@ -724,7 +724,7 @@ class UpperAgents:
             elif state_type == 'entered_vehs':
                 entered_veh = self.metric.get_entered_veh_control_interval()
                 entered_veh = entered_veh / \
-                    config['entered_veh_max']  # normalize
+                    self.config['entered_veh_max']  # normalize
                 # self.state_dict['entered_vehs'].append(entered_veh)
                 state.append(entered_veh)
 
@@ -733,7 +733,7 @@ class UpperAgents:
                 network_mean_speed, _ = self.metric.get_PN_speed_production(
                     info_inter_flag=True)
                 network_mean_speed = network_mean_speed / \
-                    config['network_mean_speed_max']  # normalize
+                    self.config['network_mean_speed_max']  # normalize
                 # self.state_dict['network_mean_speed'].append(network_mean_speed)
                 state.append(network_mean_speed)
 
@@ -741,7 +741,7 @@ class UpperAgents:
             elif state_type == 'network_halting_vehicles':
                 _, PN_halt_vehs = self.metric.get_halting_vehs(
                     info_inter_flag=True)
-                PN_halt_vehs = PN_halt_vehs/config['PN_halt_vehs_max']
+                PN_halt_vehs = PN_halt_vehs/self.config['PN_halt_vehs_max']
                 # self.state_dict['network_halting_vehicles'].append(PN_halt_vehs)
                 state.append(PN_halt_vehs)
 
@@ -751,7 +751,7 @@ class UpperAgents:
                     info_inter_flag=True)
                 # print(f'buffer_halt_vehs = {buffer_halt_vehs}')
                 buffer_halt_vehs = buffer_halt_vehs / \
-                    config['buffer_halt_vehs_max']
+                    self.config['buffer_halt_vehs_max']
                 # self.state_dict['network_halting_vehicles'].append(buffer_halt_vehs)
                 state.append(buffer_halt_vehs)
 
@@ -779,15 +779,16 @@ class DQN(UpperAgents):
     ''' A class of Deep Q-network for descrete action
     '''
 
-    def __init__(self, tsc_peri, netdata,  tau=config['tau']):
-        super().__init__(tsc_peri, netdata)
+    def __init__(self, tsc_peri, netdata, peridata, config):
+        super().__init__(tsc_peri, netdata, peridata, config)
 
+        tau = config['tau']
         self.action_num = 11
         self.actions = np.around(np.linspace(0, 1, self.action_num), 1)
         self.critic = CriticUpper(self.env_dim, 1, self.lr_C, tau)
 
         self.critic_udpate_num = 0
-        self.target_update_freq = config['target_update_freq']
+        self.target_update_freq = self.config['target_update_freq']
 
         self.best_obj = -1e5
 
@@ -921,21 +922,21 @@ class DQN(UpperAgents):
         ''' plot loss during trainning
         '''
         # 1. critic loss
-        plot_critic_loss(self.critic.qloss_list, 'Upper', self.mode)
+        plot_critic_loss(self.config['plots_path_name'], self.critic.qloss_list, 'Upper', self.mode)
 
         # 2. critic loss of last step
         self.critic.last_qloss_list.append(self.critic.qloss_list[-1])
-        plot_last_critic_loss(self.critic.last_qloss_list, 'Upper')
+        plot_last_critic_loss(self.config['plots_path_name'], self.critic.last_qloss_list, 'Upper')
 
         # print(loss_epis)
         # 3. critic loss of each epis
-        plot_critic_loss_cur_epis(loss_epis, cur_epis, self.lr_C)
+        plot_critic_loss_cur_epis(self.config['plots_path_name'], loss_epis, cur_epis, self.lr_C)
 
     def save_weights(self, path):
-        self.critic.save(path)
+        self.critic.save(self.config, path)
 
     def load_weights(self, path):
-        self.critic.load_weights(path)
+        self.critic.load_weights(self.config, path)
 
     def lr_decay(self):
         self.lr_C = self.lr_C * self.lr_C_decay
@@ -944,7 +945,7 @@ class DQN(UpperAgents):
 
     def save_best_critic(self, obj):
         if obj > self.best_obj:
-            self.critic.save(config['models_path_name'], best=True)
+            self.critic.save(self.config, self.config['models_path_name'], best=True)
             self.best_obj = obj
 
 
@@ -953,19 +954,20 @@ class C_DQN(UpperAgents):
         Constrained DQN
     '''
 
-    def __init__(self, tsc_peri, netdata,  tau=config['tau']):
-        super().__init__(tsc_peri, netdata)
+    def __init__(self, tsc_peri, netdata, peridata, config):
+        super().__init__(tsc_peri, netdata, peridata, config)
 
+        tau = self.config['tau']
         self.action_num = 11
         self.actions = np.around(np.linspace(0, 1, self.action_num), 1)
         self.critic = CriticUpper(self.env_dim, 1, self.lr_C, tau)
 
-        self.accu_crit = config['accu_max'] * 0.1
+        self.accu_crit = self.config['accu_max'] * 0.1
         self.accu_step = 50
         self.accu_epsilon = 50
 
         self.critic_udpate_num = 0
-        self.target_update_freq = config['target_update_freq']
+        self.target_update_freq = self.config['target_update_freq']
 
     def get_action(self, s, training=False):
         ''' get action using critic eval_network
@@ -991,7 +993,7 @@ class C_DQN(UpperAgents):
             action = self.actions[np.random.choice(max_q_index)]
             # print(f'optimal action ={action}')
 
-            if s[0]*config['accu_max'] > self.accu_crit+self.accu_epsilon:
+            if s[0]*self.config['accu_max'] > self.accu_crit+self.accu_epsilon:
                 action = 0
                 is_constraint = True
 
@@ -1117,21 +1119,21 @@ class C_DQN(UpperAgents):
         ''' plot loss during trainning
         '''
         # 1. critic loss
-        plot_critic_loss(self.critic.qloss_list, 'Upper', self.mode)
+        plot_critic_loss(self.config['plots_path_name'], self.critic.qloss_list, 'Upper', self.mode)
 
         # 2. critic loss of last step
         self.critic.last_qloss_list.append(self.critic.qloss_list[-1])
-        plot_last_critic_loss(self.critic.last_qloss_list)
+        plot_last_critic_loss(self.config['plots_path_name'], self.critic.last_qloss_list)
 
         # print(loss_epis)
         # 3. critic loss of each epis
-        plot_critic_loss_cur_epis(loss_epis, cur_epis, self.lr_C)
+        plot_critic_loss_cur_epis(self.config['plots_path_name'], loss_epis, cur_epis, self.lr_C)
 
     def save_weights(self, path):
-        self.critic.save(path)
+        self.critic.save(self.config, path)
 
     def load_weights(self, path):
-        self.critic.load_weights(path)
+        self.critic.load_weights(self.config, path)
 
     def lr_decay(self):
         self.lr_C = self.lr_C * self.lr_C_decay
@@ -1143,16 +1145,17 @@ class DDPG(UpperAgents):
     ''' A class of deep deterministic policy gradient algrithm for continuous action
     '''
 
-    def __init__(self, tsc_peri, netdata, tau=config['tau']):
-        super().__init__(tsc_peri, netdata)
+    def __init__(self, tsc_peri, netdata, peridata, config):
+        super().__init__(tsc_peri, netdata, peridata, config)
 
-        self.lr_A = config['lr_A']
+        tau = self.config['tau']
+        self.lr_A = self.config['lr_A']
         self.critic = CriticUpper(
             self.env_dim, self.act_dim, self.lr_C, tau, action_grad=True)
         self.actor = Actor(self.env_dim, self.act_dim, 1, self.lr_A, tau)
 
         self.critic_udpate_num = 0
-        self.target_update_freq = config['target_update_freq']
+        self.target_update_freq = self.config['target_update_freq']
 
     def get_action(self, s, training=False):
         """ Use the actor to predict value
@@ -1281,30 +1284,30 @@ class DDPG(UpperAgents):
         ''' plot loss during trainning
         '''
         # 1. critic loss
-        plot_critic_loss(self.critic.qloss_list, 'Upper', self.mode)
+        plot_critic_loss(self.config['plots_path_name'], self.critic.qloss_list, 'Upper', self.mode)
 
         # 2. critic loss of last step
         self.critic.last_qloss_list.append(self.critic.qloss_list[-1])
-        plot_last_critic_loss(self.critic.last_qloss_list)
+        plot_last_critic_loss(self.config['plots_path_name'], self.critic.last_qloss_list)
 
         # 3. actor loss (q-values)
-        plot_q_value(self.qvalue_list)
+        plot_q_value(self.config['plots_path_name'], self.qvalue_list)
 
         # 4. actor loss improvement
-        plot_q_value_improve(self.qvalue_improve)
+        plot_q_value_improve(self.config['plots_path_name'], self.qvalue_improve)
 
         # 5. critic loss of each epis
-        plot_critic_loss_cur_epis(loss_epis, cur_epis, self.lr_C)
+        plot_critic_loss_cur_epis(self.config['plots_path_name'], loss_epis, cur_epis, self.lr_C)
 
     def save_weights(self, path):
         # formatted_today = today.strftime('%m%d')
         # print(formatted_today)
         # path += '_LR_{}'.format(self.lr)
         self.actor.save(path)
-        self.critic.save(path)
+        self.critic.save(self.config, path)
 
     def load_weights(self, path):
-        self.critic.load_weights(path)
+        self.critic.load_weights(self.config, path)
         self.actor.load_weights(path)
 
     def lr_decay(self):
@@ -1321,8 +1324,8 @@ class Static(UpperAgents):
     ''' Static with default plans
     '''
 
-    def __init__(self, tsc_peri, netdata, peridata):
-        super().__init__(tsc_peri, netdata, peridata)
+    def __init__(self, tsc_peri, netdata, peridata, config):
+        super().__init__(tsc_peri, netdata, peridata, config)
 
         # self.peri_mode = 'Static'
 
@@ -1334,8 +1337,8 @@ class Expert(UpperAgents):
     '''  Expert plans
     '''
 
-    def __init__(self, tsc_peri, netdata):
-        super().__init__(tsc_peri, netdata)
+    def __init__(self, tsc_peri, netdata, peridata, config):
+        super().__init__(tsc_peri, netdata, peridata, config)
 
     def save_weights(self, path):
         pass
@@ -1346,30 +1349,30 @@ class MFD_PI(UpperAgents):
          Reference: Keyven-Ekbatani et al. 2019
     '''
 
-    def __init__(self, tsc_peri, netdata, peridata: PeriSignals):
-        super().__init__(tsc_peri, netdata, peridata)
+    def __init__(self, tsc_peri, netdata, peridata: PeriSignals, config):
+        super().__init__(tsc_peri, netdata, peridata, config)
 
         # controller settings
-        self.accu_crit = config['accu_critic']  # set-point for the controller
-        self.accu_crit_bound = config['accu_critic_bound']  # upper bound of the set-point
-        self.K_p = config['K_p']  # proportional gains
-        self.K_i = config['K_i']  # integral gains
+        self.accu_crit = self.config['accu_critic']  # set-point for the controller
+        self.accu_crit_bound = self.config['accu_critic_bound']  # upper bound of the set-point
+        self.K_p = self.config['K_p']  # proportional gains
+        self.K_i = self.config['K_i']  # integral gains
 
         self.q_last = 0   # calculated network inflow (the action) of last step
         self.q_record = [] # record of actions
         # self.accu_last = 0
 
         # the maximum inflow of the network each step (veh/s)
-        self.q_max = config['network_maximal_inflow']
-        self.q_min = config['network_minimal_inflow']
-        # self.q_max = config['saturation_flow_rate'] * config['max_green'] * len(peridata.peri_inflow_lanes)   # veh
-        # self.q_min = config['saturation_flow_rate'] * config['min_green'] * len(peridata.peri_inflow_lanes)
+        self.q_max = self.config['network_maximal_inflow']
+        self.q_min = self.config['network_minimal_inflow']
+        # self.q_max = self.config['saturation_flow_rate'] * self.config['max_green'] * len(peridata.peri_inflow_lanes)   # veh
+        # self.q_min = self.config['saturation_flow_rate'] * self.config['min_green'] * len(peridata.peri_inflow_lanes)
 
     def get_action(self, s):
         ''' PI control using keyvan-Ekbatani 2019, Page8, Eq 10
         '''
         # 1. get states
-        accu = s[0] * config['accu_max']   # current accu (veh)
+        accu = s[0] * self.config['accu_max']   # current accu (veh)
 
         # 2.calculate optimal action and upper bound action
         a = self.q_last - self.K_p * (accu - self.accu_last) + self.K_i*(self.accu_crit-accu)
@@ -1391,7 +1394,7 @@ class MFD_PI(UpperAgents):
     def record_action(self, action):
         self.q_last = action
         self.q_record.append(action)
-        self.ordered_inflow.append(action * config['cycle_time'])       # veh
+        self.ordered_inflow.append(action * self.config['cycle_time'])       # veh
 
     def save_weights(self, path):
         pass

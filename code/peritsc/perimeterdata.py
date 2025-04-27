@@ -1,11 +1,11 @@
 import sumolib
 import traci
-from utils.utilize import config
 import xml.etree.cElementTree as ET
 import numpy as np
 import copy
 from typing import Dict, List, Union, Tuple
 
+M = 1e5
 
 class DownstreamLane:
 
@@ -16,8 +16,8 @@ class DownstreamLane:
         self.last_halt_position = 1e5     # position of the last halting vehicle along the lane
         self.remain_capacity = 0
 
-    def update_remain_capacity(self):
-        self.remain_capacity = int(self.last_halt_position / config['vehicle_length'])
+    def update_remain_capacity(self, veh_length):
+        self.remain_capacity = int(self.last_halt_position / veh_length)
 
 
 class Movement:
@@ -123,8 +123,8 @@ class Lane:
     def set_capacity(self, capacity: int):
         self.capacity = capacity
 
-    def update_traffic_state(self):
-        self.arrival_rate = len(self.entered_vehicles) / config['updatestep']
+    def update_traffic_state(self, step):
+        self.arrival_rate = len(self.entered_vehicles) / step
         self.queue = len(self.queueing_vehicles) + len(self.virtual_queue_vehicles)
 
     def get_downstream_capacity(self):
@@ -192,14 +192,14 @@ class LaneGroup:
         for lane in self.lanes.values():
             lane.arrival_rate = self.arrival_rate / len(self.lanes)
 
-    def update_target_state(self, cycle):
+    def update_target_state(self, cycle, spill_ratio):
         """
         Update the target state before updating the queue coefficient
         """
         # 2025.3.30更新: 在排队消散期间动态调节critical state
         if self.this_interval_max_halting_number >= self.last_interval_max_halting_number:
             # 排队蔓延: 将目标状态设为防溢流状态即可
-            self.critical_queue_ratio = config['spillover_critical_ratio']
+            self.critical_queue_ratio = spill_ratio
         else:
             # 排队消散: 当优化时刻的排队与之前的critical state接近或更短, 则减小critical queue ratio
             if self.total_queue <= self.critical_queue_ratio * self.total_capacity * 1.1:
@@ -226,12 +226,12 @@ class LaneGroup:
     def update_queue_coef(self, control_mode, target_gap, cycle):
         if control_mode == 'PI-Balance':
             if target_gap <= 0.001:
-                self.queue_pressure_coef = self.target_queue_vehicle / config['M']
+                self.queue_pressure_coef = self.target_queue_vehicle / M
             else:
                 # 2025.3.30更新: 动态调节critical point (target_queue_vehicle)
                 self.queue_pressure_coef = target_gap * self.target_queue_vehicle / cycle
         elif control_mode in ['PI-Cordon', 'PI']:
-            self.queue_pressure_coef = self.target_queue_vehicle / config['M']
+            self.queue_pressure_coef = self.target_queue_vehicle / M
 
     def check_target_state_reached(self, cycle):
         '''
@@ -354,7 +354,7 @@ class Intersection:
 
 class PeriSignals:
 
-    def __init__(self, net_fp: str, sumo_cmd):
+    def __init__(self, net_fp: str, sumo_cmd, config):
         self.peri_info = config['Peri_info']
         self.peri_signals: Dict[str, Intersection] = {tls: Intersection(tls) for tls in self.peri_info}
         self.peri_nodes: List[str] = [tls['node'] for tls in self.peri_info.values()]
@@ -369,7 +369,7 @@ class PeriSignals:
 
         print("SUCCESSFULLY GENERATED PERI INTERSECTION DATA")
 
-    def get_basic_inform(self):
+    def get_basic_inform(self, config):
         tree = ET.ElementTree(file=self.netfile)
         root = tree.getroot()
         connections = root.findall('connection')
@@ -632,7 +632,7 @@ class PeriSignals:
 
     def set_normalized_coef(self):
         for lane_group in self.peri_lane_groups.values():
-            lane_group.queue_pressure_coef = lane_group.target_queue_vehicle / config['M']
+            lane_group.queue_pressure_coef = lane_group.target_queue_vehicle / M
 
     def check_conflict_matrix(self):
 
@@ -732,7 +732,7 @@ class PeriSignals:
             for lanegroup_id, lanegroup in signal.lane_groups.items():
                 lanegroup.green_duration = [0]
 
-    def update_green_from_phase_index(self, signal_id, phase_num: int, green_time: int):
+    def update_green_from_phase_index(self, signal_id, phase_num: int, green_time: int, config):
         '''
         Used for MP algorithm: update the green time according to the given SIGNAL dict
         '''

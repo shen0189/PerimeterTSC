@@ -1,6 +1,5 @@
 import sumolib
 import traci
-from utils.utilize import config
 from utils.result_processing import plot_MFD
 import numpy as np
 from envir.perimeter import Peri_Agent
@@ -22,8 +21,9 @@ else:
     sys.exit("please declare environment variable 'SUMO_HOME'")
 
 class Metric():
-    def __init__(self, control_interval, info_interval, netdata, peridata):
+    def __init__(self, control_interval, info_interval, netdata, peridata, config):
         assert control_interval%info_interval==0, 'the info_interval is incorrect'
+        self.config = config
         self.info_length = int(control_interval/info_interval) + 1
         self.netdata = netdata
         self.peridata: PeriSignals = peridata
@@ -86,7 +86,7 @@ class Metric():
                 'left': 0,
                 'total': 0
             }
-            for i in config['Edge']
+            for i in self.config['Edge']
         }
 
     def update_info_interval(self, index, peri_info, ouputdir):
@@ -112,8 +112,8 @@ class Metric():
         
         ## get data by individual traci 
         for edgeID in self.netdata['edge']:
-            if int(edgeID) not in config['Edge_Peri']:
-                if int(edgeID) in config['Edge_PN']: # for edges in PN
+            if int(edgeID) not in self.config['Edge_Peri']:
+                if int(edgeID) in self.config['Edge_PN']: # for edges in PN
                     accu_edge = traci.edge.getLastStepVehicleNumber(edgeID)
                     accu_onestep_PN += accu_edge
                     halt_vehs_PN += traci.edge.getLastStepHaltingNumber(edgeID)
@@ -175,7 +175,7 @@ class Metric():
         ''' get the demand of the PN in the future steps
         '''
         demand_nextstep = 0
-        for DemandType in config['DemandConfig']:
+        for DemandType in self.config['DemandConfig']:
             if DemandType[
                     'DemandType'] != 'outin':  # demand generated inside the region
                 # averge demand of future steps
@@ -183,7 +183,7 @@ class Metric():
                 demand_nextstep += np.mean(
                     demand_temp[(cycle_index +
                                  1):(cycle_index + 1 +
-                                     config['Demand_state_steps'])])
+                                     self.config['Demand_state_steps'])])
         
         if np.isnan(demand_nextstep).any():
             demand_nextstep = 0
@@ -237,11 +237,11 @@ class Metric():
                 edge = int(child.attrib['id'])  # get the edge
 
                 # outflow of PN
-                if edge in config['Edge_Peri_out']:
+                if edge in self.config['Edge_Peri_out']:
                     throuput += int(child.attrib['entered'])
 
                 # arrived flow within PN
-                if edge in config['Edge_PN']:
+                if edge in self.config['Edge_PN']:
                     throuput += int(child.attrib['arrived'])
 
                 ## Peri control links
@@ -316,7 +316,7 @@ class Metric():
         df = df_complete.merge(df_raw, on=['edge_id', 'interval_end'], how='left').fillna(1e-5)
 
         ## get PN edges
-        df_PN = df[df['edge_id'].isin(config['Edge_PN'])]
+        df_PN = df[df['edge_id'].isin(self.config['Edge_PN'])]
         df_buffer = df[df['edge_id'].isin(self.edge_buffer)]
         df_peri = df[df['edge_id'].isin(self.peri_controlled_links)]
         df_peri_out = df[df['edge_id'].isin(self.peri_outflow_links)]
@@ -393,10 +393,11 @@ class Metric():
         ## 2. fill na
         # df['lane_id'].fillna(-1, inplace=True)
         # df['lane_queueing_time'].fillna(0, inplace=True)
-        df_complete = pd.DataFrame(product(np.arange(0, config['max_steps'], config['lower_agent_step'], dtype=float),
-                                           self.netdata['edge'].keys()), columns=['interval_begin', 'edge_id'])
+        df_complete = pd.DataFrame(product(
+            np.arange(0, self.config['max_steps'], self.config['lower_agent_step'], dtype=float),
+            self.netdata['edge'].keys()), columns=['interval_begin', 'edge_id'])
         df = df_complete.merge(df, on=['interval_begin', 'edge_id'], how='left').fillna(1e-5)
-        df_PN = df[df['edge_id'].astype(int).isin(config['Edge_PN'])]
+        df_PN = df[df['edge_id'].astype(int).isin(self.config['Edge_PN'])]
 
         ## 3. process data
         lane_data = {}
@@ -469,7 +470,6 @@ class Metric():
         return the queue info of peri inflows
         0426更新: 选择采用周期内最大排队长度，相对来说更准确
         """
-        step = config['cycle_time']      # 采集一个周期的平均排队长度
 
         ## set file name as csv
         file = file.split('.')
@@ -477,7 +477,7 @@ class Metric():
 
         # get base dataframe (two columns: interval and lane_id)
         lanes = list(self.peridata.peri_inflow_lanes_by_laneID.keys())
-        intervals = np.arange(0, config['max_steps'], 1, dtype=float)
+        intervals = np.arange(0, self.config['max_steps'], 1, dtype=float)
         df_complete = pd.DataFrame(product(intervals, lanes), columns=['data_timestep', 'lane_id'])
 
         # process the csv and generate full df
@@ -498,7 +498,7 @@ class Metric():
         df_queue_raw = pd.merge(df_lane_group_info, df_queue_raw)
         # 此处queue定义为车道组内所有车道排队长度的平均值
         df_queue_avg = df_queue_raw.groupby(['data_timestep', 'lane_group_id'], as_index=False)['queue'].mean()
-        df_queue_avg['interval'] = df_queue_avg['data_timestep'] // config['queue_statistics_interval'] * config['queue_statistics_interval']
+        df_queue_avg['interval'] = df_queue_avg['data_timestep'] // self.config['queue_statistics_interval'] * self.config['queue_statistics_interval']
         # 每个interval的排队取interval内的最大排队
         df_queue = df_queue_avg.groupby(['interval', 'lane_group_id'], as_index=False)['queue'].max()
         df_queue = df_queue.reset_index()
@@ -518,11 +518,11 @@ class Metric():
 
         df = pd.read_csv(file, sep=';', usecols=['tripinfo_depart', 'tripinfo_departLane', 'tripinfo_departDelay',
                                                  'tripinfo_arrival', 'tripinfo_arrivalLane', 'tripinfo_duration'])
-        df['arrival_interval'] = df['tripinfo_arrival'] // config['trip_complete_interval'] * config['trip_complete_interval']
+        df['arrival_interval'] = df['tripinfo_arrival'] // self.config['trip_complete_interval'] * self.config['trip_complete_interval']
         # 根据出发/到达车道区分trip类型
         df['depart_edge'] = df['tripinfo_departLane'].str.split('_').str[0].astype(int)
         df['arrival_edge'] = df['tripinfo_arrivalLane'].str.split('_').str[0].astype(int)
-        df['trip_type'] = df.apply(get_trip_type, axis=1)
+        df['trip_type'] = df.apply(lambda row: get_trip_type(row, self.config), axis=1)
         df = df[df['trip_type'] != 'out-in']        # 处理jtrrouter生成out-in类型trip的bug
         # 计算真实trip time
         df['tripinfo_duration'] += df['tripinfo_departDelay']
@@ -531,7 +531,7 @@ class Metric():
             vehicle_num=('tripinfo_arrival', 'count'),
             tripinfo_duration=('tripinfo_duration', 'sum')
         ).reset_index()
-        df_complete = pd.DataFrame(np.arange(0, config['max_steps'], config['trip_complete_interval'], dtype=float),
+        df_complete = pd.DataFrame(np.arange(0, self.config['max_steps'], self.config['trip_complete_interval'], dtype=float),
                                    columns=['arrival_interval'])
         trip_info_df_dict = {}
         for trip_type, trip_info in df_travel.groupby('trip_type'):
@@ -555,14 +555,14 @@ class Metric():
         ''' get the list of buffer edges '''
         edge_buffers=[]
         for edgeID in self.netdata['edge']:
-            if int(edgeID) not in config['Edge_Peri'] and \
-                int(edgeID) not in config['Edge_PN']: # for edges in PN
+            if int(edgeID) not in self.config['Edge_Peri'] and \
+                int(edgeID) not in self.config['Edge_PN']: # for edges in PN
                 edge_buffers.append(int(edgeID))
         
         return edge_buffers
 
 
-def get_trip_type(edge):
+def get_trip_type(edge, config):
     if config['network'] == 'FullGrid':
         if edge['depart_edge'] in config['Edge_Peri']:
             if edge['arrival_edge'] in config['Edge_Peri_out']:
