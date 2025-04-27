@@ -7,6 +7,7 @@ output
 code/utils/utilize.py
 code/utils/demand_config.py
 code/plot_compare.py
+code/experiment_configs.yaml
 code/scripts
 *.trips.xml
 *.flows.xml
