@@ -7,10 +7,11 @@ from utils.result_processing import plot_demand_from_turn
 
 class TrafficGeneratorFromTurn:
 
-    def __init__(self, config):
+    def __init__(self, e, config):
         self.turn_file_name = config['turnfile_dir']
         self.turn_probability = {}
         self.edge_flow_for_each_type = []      # each element corresponds to a demand type
+        self.cur_epis = e
 
     def generate_turn_probability(self, config, netdata):
         """
@@ -78,7 +79,9 @@ class TrafficGeneratorFromTurn:
             for i in range(len(config['Demand_interval'])):
                 edge_flow = flow_allocation(demand_info['VolumeProfile'][i] * demand_info['multiplier'],
                                             demand_info['FromEdges'],
-                                            config=config, scale=scale)
+                                            config=config, 
+                                            cur_epis=self.cur_epis,
+                                            scale=scale)
                 for edge, flow in edge_flow.items():
                     flow_dict[edge].append(flow)
             self.edge_flow_for_each_type.append(flow_dict)
@@ -165,7 +168,7 @@ class TrafficGeneratorFromTurn:
         
 
 
-def flow_allocation(link_flow: int, edge_list: list, config, scale: float = 0.,):
+def flow_allocation(link_flow: int, edge_list: list, config, cur_epis, scale: float = 0.,):
     """
     Allocate flow to each edge given the total flow
 
@@ -177,7 +180,7 @@ def flow_allocation(link_flow: int, edge_list: list, config, scale: float = 0.,)
     Return:
         flow_dict (dict): Dict of flow allocation
     """
-    np.random.seed(47)
+    np.random.seed(47 + 86 * cur_epis)
     total_flow = link_flow * len(edge_list)
     while True:
         if config['demand_mode'] == 'MFD':

@@ -101,7 +101,7 @@ def simulate_one_episode_train(e, container, accu_crit = None):
         agent_upper.accu_crit = accu_crit
     # env = Env
     if config['network'] == 'FullGrid':
-        trafficGen = TrafficGeneratorFromTurn(config)
+        trafficGen = TrafficGeneratorFromTurn(e, config)
     else:
         trafficGen = TrafficGenerator(config)
     if n_jobs>0:
@@ -487,8 +487,8 @@ def train_simple_config(config):
         TrafficGen = TrafficGenerator(config)
         TrafficGen.gen_demand(config)
     elif config['network'] == 'FullGrid':
-        TrafficGen = TrafficGeneratorFromTurn(config)
-        # 1. 生成转向概率及需求
+        TrafficGen = TrafficGeneratorFromTurn(0, config)
+        # 1. 生成转向概率及临时需求
         TrafficGen.generate_turn_probability(config, netdata)
         TrafficGen.generate_flow(config)
         # 2. 写入文件
