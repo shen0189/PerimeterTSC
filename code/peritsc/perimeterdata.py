@@ -180,6 +180,9 @@ class LaneGroup:
             assert len(self.movements) == 2
             return next(k for k in self.movements if k[-1] == 's')
 
+    def get_edge_id(self):
+        return next(iter(self.lanes)).split('_')[0]
+
     def get_downstream_capacity(self):
         capacity = min([lane.get_downstream_capacity() for lane in self.lanes.values()]) * len(self.lanes)
         # capacity = sum([lane.get_downstream_capacity() for lane in self.lanes.values()])
@@ -359,7 +362,6 @@ class PeriSignals:
         self.peri_signals: Dict[str, Intersection] = {tls: Intersection(tls) for tls in self.peri_info}
         self.peri_nodes: List[str] = [tls['node'] for tls in self.peri_info.values()]
         self.peri_inflows: Dict[str, Movement] = {}     # 仅受控方向
-        self.peri_edges: Dict[str, LaneGroup] = {}      # 仅受控方向, lanegroup -> edge
         self.peri_lane_groups: Dict[str, LaneGroup] = {}     # 仅受控方向
         self.peri_inflow_lanes_by_laneID: Dict[str, Lane] = {}      # 仅受控方向
         self.peri_inflow_lanes: List[tuple] = []    # 仅受控方向

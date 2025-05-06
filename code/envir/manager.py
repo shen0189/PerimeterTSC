@@ -346,6 +346,11 @@ class Trainer():
         self.record_fields['cumul_obj_upper'] = upper_metric['cul_reward'][0]
         self.record_fields['peri_entered_vehs'] = upper_metric['peri_entered_vehs']
         self.record_fields['peri_outflow_vehs'] = upper_metric['peri_outflow_vehs']
+        for direction in ['north', 'east', 'west', 'south']:
+            inflow_field_name = 'peri_entered_vehs_' + direction
+            outflow_field_name = 'peri_outflow_vehs_' + direction
+            self.record_fields[inflow_field_name] = upper_metric[inflow_field_name]
+            self.record_fields[outflow_field_name] = upper_metric[outflow_field_name]
         self.record_fields['peri_waiting_tot'] = upper_metric['peri_waiting_tot']
         self.record_fields['peri_waiting_mean'] = upper_metric['peri_waiting_mean']
         self.record_fields['peri_ordered_inflow'] = upper_metric['ordered_inflow']
@@ -358,7 +363,16 @@ class Trainer():
         self.record_fields['PN_speed_epis'] = lower_metric['PN_speed']
         self.record_fields['peri_spillover'] = lower_metric['peri_spillover']
         self.record_fields['peri_queue'] = lower_metric['peri_queue']
+        for direction in ['north', 'east', 'west', 'south']:
+            queue_field_name = 'peri_queue_' + direction
+            spillover_field_name = 'peri_spillover_' + direction
+            self.record_fields[queue_field_name] = lower_metric[queue_field_name]
+            self.record_fields[spillover_field_name] = lower_metric[spillover_field_name]
         self.record_fields['peri_throughput'] = lower_metric['peri_throughput']
+        for node_type in self.config['peri_node_types']:
+            demand_type = node_type.split('_')[-1]
+            field_name = 'peri_throughput_' + demand_type
+            self.record_fields[field_name] = lower_metric[field_name]
         self.record_fields['peri_throughput_each_tsc'] = lower_metric['peri_throughput_each_tsc']
         self.record_fields['peri_delay'] = lower_metric['peri_delay']
         self.record_fields['tsc_delay_step'] = lower_metric['tsc_delay_step']
@@ -387,9 +401,9 @@ class Trainer():
 
         # other indices: throughput, spillover, and delay
         plot_feature_progression(self.config, self.record_fields['peri_throughput'], self.cur_epis, self.n_jobs,
-                                 'peri_throughput', 'Throughput (veh)')
+                                 'peri_throughput', 'Throughput (veh)', accumulated=True)
         plot_feature_progression(self.config, self.record_fields['peri_spillover'], self.cur_epis, self.n_jobs,
-                                 'peri_spillover', 'Spillover times')
+                                 'peri_spillover', 'Spillover times', accumulated=True)
         plot_feature_progression(self.config, self.record_fields['peri_delay'], self.cur_epis, self.n_jobs,
                                  'peri_delay', 'Delay (s)')
 
@@ -454,11 +468,28 @@ class Trainer():
         save_stats(self.config, self.record_fields['PN_speed_epis'], self.cur_epis, self.n_jobs, 'PN_speed')
         # perimeter level
         save_stats(self.config, self.record_fields['peri_throughput'], self.cur_epis, self.n_jobs, 'peri_throughput')
-        save_stats(self.config, self.record_fields['peri_throughput_each_tsc'], self.cur_epis, self.n_jobs, 'peri_throughput_each_tsc')
+        for node_type in self.config['peri_node_types']:
+            demand_type = node_type.split('_')[-1]
+            field_name = 'peri_throughput_' + demand_type
+            save_stats(self.config, self.record_fields[field_name], self.cur_epis, self.n_jobs, field_name)
+        save_stats(self.config, self.record_fields['peri_throughput_each_tsc'], self.cur_epis, self.n_jobs,
+                   'peri_throughput_each_tsc')
         save_stats(self.config, self.record_fields['peri_queue'], self.cur_epis, self.n_jobs, 'peri_queue')
         save_stats(self.config, self.record_fields['peri_spillover'], self.cur_epis, self.n_jobs, 'peri_spillover')
         save_stats(self.config, self.record_fields['peri_entered_vehs'], self.cur_epis, self.n_jobs, 'peri_inflow')
         save_stats(self.config, self.record_fields['peri_outflow_vehs'], self.cur_epis, self.n_jobs, 'peri_outflow')
+        for direction in ['south', 'north', 'east', 'west']:
+            inflow_field_name = 'peri_entered_vehs_' + direction
+            outflow_field_name = 'peri_outflow_vehs_' + direction
+            queue_field_name = 'peri_queue_' + direction
+            spillover_field_name = 'peri_spillover_' + direction
+            save_stats(self.config, self.record_fields[inflow_field_name], self.cur_epis, self.n_jobs,
+                       'peri_inflow_' + direction)
+            save_stats(self.config, self.record_fields[outflow_field_name], self.cur_epis, self.n_jobs,
+                       'peri_outflow_' + direction)
+            save_stats(self.config, self.record_fields[queue_field_name], self.cur_epis, self.n_jobs, queue_field_name)
+            save_stats(self.config, self.record_fields[spillover_field_name], self.cur_epis, self.n_jobs,
+                       spillover_field_name)
         save_stats(self.config, self.record_fields['peri_delay'], self.cur_epis, self.n_jobs, 'peri_delay')
         for mov_type, green_stats in self.record_fields['peri_cumul_green'].items():
             save_stats(self.config, green_stats, self.cur_epis, self.n_jobs, '_'.join(('peri', mov_type, 'cumul_green')))

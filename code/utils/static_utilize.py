@@ -43,6 +43,18 @@ def import_train_static_configuration(config):
                             'O10', 'O20', 'O30', 'O40', 'O50',
                             'O16', 'O26', 'O36', 'O46', 'O56']
         }
+
+        config['Node_PN'] = ['I22', 'I32', 'I42', 'I23', 'I33', 'I43', 'I24', 'I34', 'I44']
+        config['Node_Peri'] = ['P11', 'P12', 'P13', 'P14', 'P21', 'P31', 'P41', 'P51',
+                               'P15', 'P25', 'P35', 'P45', 'P52', 'P53', 'P54', 'P55'],
+        config['Node_Corner'] = ['P11', 'P15', 'P51', 'P55'],
+        config['Node_outside'] = ['O01', 'O02', 'O03', 'O04', 'O05', 'O61', 'O62', 'O63', 'O64', 'O65',
+                                  'O10', 'O20', 'O30', 'O40', 'O50', 'O16', 'O26', 'O36', 'O46', 'O56']
+        config['peri_node_types'] = ['Node_Peri_high', 'Node_Peri_low', 'Node_Peri_mixed']
+        config['Node_Peri_high'] = ['P12', 'P13', 'P14', 'P15', 'P25', 'P35', 'P45']
+        config['Node_Peri_low'] = ['P21', 'P31', 'P41', 'P51', 'P52', 'P53', 'P54']
+        config['Node_Peri_mixed'] = ['P11', 'P55']
+
         config['Edge'] = [edge for i in range(10) for edge in range(i * 10 + 1, i * 10 + 9)] + \
                          [edge for i in range(10) for edge in range(i * 10 + 101, i * 10 + 105)]
         config['Edge_PN'] = sorted([edge for i in range(10) for edge in range(i * 10 + 1, i * 10 + 9)])
@@ -50,12 +62,23 @@ def import_train_static_configuration(config):
         config['Edge_PN_exit'] = sorted([32, 52, 72, 28, 48, 68, 37, 57, 77, 21, 41, 61])  # 从3*3到5*5的路段
         config['Edge_Peri'] = sorted(
             [edge for i in range(0, 10, 2) for edge in [i * 10 + 102, i * 10 + 114, i * 10 + 103, i * 10 + 111]])
-        config['Edge_Peri_high_demand'] = sorted(
-            [edge for i in range(0, 10, 2) for edge in [i * 10 + 102, i * 10 + 103]])
-        config['Edge_Peri_low_demand'] = sorted(
-            [edge for i in range(0, 10, 2) for edge in [i * 10 + 114, i * 10 + 111]])
         config['Edge_Peri_out'] = sorted(
             [edge for i in range(0, 10, 2) for edge in [i * 10 + 104, i * 10 + 112, i * 10 + 101, i * 10 + 113]])
+        config['peri_inflow_edge_type'] = ['Edge_Peri_north_in', 'Edge_Peri_west_in',
+                                           'Edge_Peri_south_in', 'Edge_Peri_east_in']
+        config['Edge_Peri_north_in'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 103]])
+        config['Edge_Peri_west_in'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 102]])
+        config['Edge_Peri_south_in'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 111]])
+        config['Edge_Peri_east_in'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 114]])
+        config['Edge_Peri_high_demand'] = sorted(config['Edge_Peri_north_in'] + config['Edge_Peri_west_in'])
+        config['Edge_Peri_low_demand'] = sorted(config['Edge_Peri_south_in'] + config['Edge_Peri_east_in'])
+        config['peri_outflow_edge_type'] = ['Edge_Peri_north_out', 'Edge_Peri_west_out',
+                                            'Edge_Peri_south_out', 'Edge_Peri_east_out']
+        config['Edge_Peri_north_out'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 113]])
+        config['Edge_Peri_west_out'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 112]])
+        config['Edge_Peri_south_out'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 101]])
+        config['Edge_Peri_east_out'] = sorted([edge for i in range(0, 10, 2) for edge in [i * 10 + 104]])
+
     elif config['network'] == 'Bloomsbury':
         config['Node'] = {
             'NodePN': [13, 12, 22, 21, 20, 19, 18, 17, 34],

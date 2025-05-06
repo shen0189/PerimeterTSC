@@ -723,7 +723,8 @@ def plot_controlled_tls_delay_epis(config, tls_delay_epis, e, n_jobs, ylim, titl
     plt.close()
 
 
-def plot_feature_progression(config, feature_epis, e, n_jobs, feature_title, ylabel_name, has_title=True):
+def plot_feature_progression(config, feature_epis, e, n_jobs, feature_title, ylabel_name, has_title=True,
+                             accumulated=False):
     """
     plot the progression of a specific feature
     """
@@ -732,6 +733,9 @@ def plot_feature_progression(config, feature_epis, e, n_jobs, feature_title, yla
     plt.grid()
     if has_title:
         plt.title(f'{feature_title} progression of episode {e + 1}')
+    if accumulated:
+        feature_epis = feature_epis.copy()
+        feature_epis = [sum(feature_epis[:i + 1]) for i in range(len(feature_epis))]
     if isinstance(feature_epis, list) or isinstance(feature_epis, np.ndarray):      # 一条直线
         step = config['max_steps'] / len(feature_epis)
         plt.plot(np.arange(0, config['max_steps'], step), feature_epis, '-')

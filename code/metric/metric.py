@@ -355,10 +355,18 @@ class Metric():
         ## get perimeter entered vehs
         peri_entered_vehs = df_peri.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_left']].set_index('edge_id').T)
         edge_data['peri_entered_vehs'] = peri_entered_vehs.to_numpy()
+        inflow_edge_throughput_dict = {}
+        for edge_id in peri_entered_vehs:
+            inflow_edge_throughput_dict[edge_id] = peri_entered_vehs[edge_id].to_numpy()
+        edge_data['peri_entered_vehs_by_edge'] = inflow_edge_throughput_dict
 
         ## get perimeter left vehs
         peri_outflow_vehs = df_peri_out.groupby('interval_end').apply(lambda x: x[['edge_id', 'edge_entered']].set_index('edge_id').T)
         edge_data['peri_outflow_vehs'] = peri_outflow_vehs.to_numpy()
+        outflow_edge_throughput_dict = {}
+        for edge_id in peri_outflow_vehs:
+            outflow_edge_throughput_dict[edge_id] = peri_outflow_vehs[edge_id].to_numpy()
+        edge_data['peri_outflow_vehs_by_edge'] = outflow_edge_throughput_dict
 
         ## get perimeter waiting times
         # total waiting time on each perimeter links
@@ -433,23 +441,19 @@ class Metric():
         df['ToNode'] = df['edge_id'].apply(lambda x: self.netdata['edge'][x]['incnode']) # add attribute of ToNode
         df_ToNode = df.groupby(['ToNode', 'interval_begin'])['edge_waitingTime'].sum()  # get ToNode queue at each step
         df_ToNode1 = df_ToNode.reset_index().pivot(index='interval_begin', columns='ToNode', values='edge_waitingTime')  # reset df
-
         # get dict of ToNode queue
         ToNode_queue_dict = {}
         for col in df_ToNode1.columns:
             ToNode_queue_dict[col] = df_ToNode1[col].to_numpy()
-
         lane_data['ToNode_delay_step'] = ToNode_queue_dict
 
         ''' 2.2 Node throughput for each step'''
         df_through = df.groupby(['ToNode', 'interval_begin'])['edge_left'].sum()  # get ToNode queue at each step
         df_through1 = df_through.reset_index().pivot(index='interval_begin', columns='ToNode', values='edge_left')  # reset df
-
         # get dict of ToNode throughput
         ToNode_throughput_dict = {}
         for col in df_through1.columns:
             ToNode_throughput_dict[col] = df_through1[col].to_numpy()
-
         lane_data['ToNode_throughput_step'] = ToNode_throughput_dict
 
         ''' 2.3 Node sampletime for each step'''
@@ -475,6 +479,8 @@ class Metric():
         file = file.split('.')
         file = '.'.join([file[0], 'csv'])
 
+        queue_data = {}
+
         # get base dataframe (two columns: interval and lane_id)
         lanes = list(self.peridata.peri_inflow_lanes_by_laneID.keys())
         intervals = np.arange(0, self.config['max_steps'], 1, dtype=float)
@@ -489,25 +495,46 @@ class Metric():
         df['edge_id'] = df['lane_id'].str.split('_').str[0].astype(int)
         df_queue_raw = df[df['edge_id'].isin(self.peri_controlled_links)]
 
-        # process the queue for each lane group
-        lane_group = self.peridata.peri_lane_groups
-        # lane_groups = list(lane_group.keys())
         df_lane_group_info = pd.DataFrame(
-            [(lane_group_id, lane_id) for lane_group_id, lanes in lane_group.items() for lane_id in lanes.lanes],
+            [(lane_group_id, lane_id) for lane_group_id, lanes in self.peridata.peri_lane_groups.items()
+             for lane_id in lanes.lanes],
             columns=['lane_group_id', 'lane_id'])
         df_queue_raw = pd.merge(df_lane_group_info, df_queue_raw)
-        # 此处queue定义为车道组内所有车道排队长度的平均值
+        # 车道组的queue定义为车道组内所有车道排队长度的平均值
         df_queue_avg = df_queue_raw.groupby(['data_timestep', 'lane_group_id'], as_index=False)['queue'].mean()
-        df_queue_avg['interval'] = df_queue_avg['data_timestep'] // self.config['queue_statistics_interval'] * self.config['queue_statistics_interval']
+        df_queue_avg['interval'] = df_queue_avg['data_timestep'] // self.config['queue_statistics_interval'] * \
+                                   self.config['queue_statistics_interval']
         # 每个interval的排队取interval内的最大排队
         df_queue = df_queue_avg.groupby(['interval', 'lane_group_id'], as_index=False)['queue'].max()
         df_queue = df_queue.reset_index()
+        threshold = self.config['spillover_threshold']
+        df_queue['spillover'] = df_queue.apply(
+            lambda row: 1 if row['queue'] / self.peridata.peri_lane_groups[row['lane_group_id']].length > threshold else 0,
+            axis=1
+        )
 
-        queue_data = {}
-        # get the queue length of each peri inflow lane group
+        # process the queue/spillover for each lane group
+        queue_data_by_lanegroup, spillover_data_by_lanegroup = {}, {}
         for lane_group_id in self.peridata.peri_lane_groups:
             queue_list = list(df_queue[df_queue['lane_group_id'] == lane_group_id]['queue'])
-            queue_data[lane_group_id] = queue_list
+            spillover_list = list(df_queue[df_queue['lane_group_id'] == lane_group_id]['spillover'])
+            queue_data_by_lanegroup[lane_group_id] = queue_list
+            spillover_data_by_lanegroup[lane_group_id] = spillover_list
+        queue_data['queue_each_lanegroup'] = queue_data_by_lanegroup
+        queue_data['spillover_each_lanegroup'] = spillover_data_by_lanegroup
+
+        # process the queue/spillover for each edge
+        queue_data_by_edge, spillover_data_by_edge = {}, {}
+        df_queue['edge_id'] = df_queue['lane_group_id'].apply(lambda x: self.peridata.peri_lane_groups[x].get_edge_id()).astype(int)
+        df_queue_by_edge = df_queue.groupby(['interval', 'edge_id'], as_index=False)['queue', 'spillover'].sum()
+        df_queue_by_edge = df_queue_by_edge.reset_index()
+        for edge_id in self.config['Edge_Peri']:
+            queue_list = list(df_queue_by_edge[df_queue_by_edge['edge_id'] == edge_id]['queue'])
+            spillover_list = list(df_queue_by_edge[df_queue_by_edge['edge_id'] == edge_id]['spillover'])
+            queue_data_by_edge[edge_id] = queue_list
+            spillover_data_by_edge[edge_id] = spillover_list
+        queue_data['queue_each_edge'] = queue_data_by_edge
+        queue_data['spillover_each_edge'] = spillover_data_by_edge
 
         return queue_data
 

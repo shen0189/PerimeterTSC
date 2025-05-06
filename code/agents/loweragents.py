@@ -55,9 +55,6 @@ class LowerAgents:
             #     = self._get_batch_signal_matrix()
         self._get_batch_signal_matrix()
 
-        ## perimeter config
-        self.spillover_threshold = config['spillover_threshold']
-
         ##
         self.reward_norm = config['lower_reward_max']
        
@@ -485,22 +482,29 @@ class LowerAgents:
         peri_throughput_dict = {k: v for k, v in lane_data['ToNode_throughput_step'].items() if
                                 k in self.peridata.peri_nodes}
         total_throughput = [sum(throughput_tuple) for throughput_tuple in zip(*peri_throughput_dict.values())]
-        total_throughput_progression = [sum(total_throughput[:i+1]) for i in range(len(total_throughput))]
+        lower_metric['peri_throughput'] = total_throughput
+        for node_type in self.config['peri_node_types']:
+            node_throughput_values = [peri_throughput_dict[node] for node in self.config[node_type]]
+            subset_total_throughput = [sum(node_throughput) for node_throughput in zip(*node_throughput_values)]
+            lower_metric['peri_throughput_' + node_type.split('_')[-1]] = subset_total_throughput
         lower_metric['peri_throughput_each_tsc'] = peri_throughput_dict
-        lower_metric['peri_throughput'] = total_throughput_progression
 
         ''' 4.2 peri inflow queue length (maximum queue length in one interval) '''
-        lower_metric['peri_queue'] = queue_data
+        lower_metric['peri_queue'] = queue_data['queue_each_lanegroup']
+        for direction in ['north', 'south', 'east', 'west']:
+            edge_type = 'Edge_Peri_' + direction + '_in'
+            edge_queue_values = [queue_data['queue_each_edge'][edge] for edge in self.config[edge_type]]
+            aggregated_queue = [sum(edge_queue) for edge_queue in zip(*edge_queue_values)]
+            lower_metric['peri_queue_' + direction] = aggregated_queue
 
         ''' 4.3 peri spillover times '''
-        threshold = self.spillover_threshold
-        length_dict = {lanegroup_id: self.peridata.peri_lane_groups[lanegroup_id].length for lanegroup_id in queue_data}
-        spillover_data = {
-            lanegroup_id: [0 if queue / length_dict[lanegroup_id] < threshold else 1
-                           for queue in queue_data[lanegroup_id]] for lanegroup_id in queue_data}
-        total_spillover_times = [sum(spillover_tuple) for spillover_tuple in zip(*spillover_data.values())]
-        spillover_times_progression = [sum(total_spillover_times[:i+1]) for i in range(len(total_spillover_times))]
-        lower_metric['peri_spillover'] = spillover_times_progression
+        total_spillover = [sum(spillover_tuple) for spillover_tuple in zip(*queue_data['spillover_each_lanegroup'].values())]
+        lower_metric['peri_spillover'] = total_spillover
+        for direction in ['north', 'south', 'east', 'west']:
+            edge_type = 'Edge_Peri_' + direction + '_in'
+            edge_spillover_values = [queue_data['spillover_each_edge'][edge] for edge in self.config[edge_type]]
+            aggregated_spillover = [sum(edge_spillover) for edge_spillover in zip(*edge_spillover_values)]
+            lower_metric['peri_spillover_' + direction] = aggregated_spillover
 
         ''' 4.4 peri average delay '''
         peri_delay_dict = {k: v for k, v in lane_data['ToNode_delay_step'].items() if k in self.peridata.peri_nodes}

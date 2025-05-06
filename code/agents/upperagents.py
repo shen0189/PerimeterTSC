@@ -600,13 +600,21 @@ class UpperAgents:
 
         '''entered_vehs'''
         peri_entered_vehs = np.sum(edge_data['peri_entered_vehs'], axis=1)
-        # peri_entered_vehs = self._fill_metric_values(peri_entered_vehs)
         metric['peri_entered_vehs'] = peri_entered_vehs
+        for direction in ['north', 'west', 'south', 'east']:
+            edge_type = 'Edge_Peri_' + direction + '_in'
+            edge_inflow_values = [edge_data['peri_entered_vehs_by_edge'][edge] for edge in self.config[edge_type]]
+            aggregated_inflow = [sum(edge_inflow) for edge_inflow in zip(*edge_inflow_values)]
+            metric['peri_entered_vehs_' + direction] = aggregated_inflow
 
         ''' outflow vehs '''
         peri_outflow_vehs = np.sum(edge_data['peri_outflow_vehs'], axis=1)
-        # peri_outflow_vehs = self._fill_metric_values(peri_outflow_vehs, metric_name='outflow')
         metric['peri_outflow_vehs'] = peri_outflow_vehs
+        for direction in ['north', 'west', 'south', 'east']:
+            edge_type = 'Edge_Peri_' + direction + '_out'
+            edge_outflow_values = [edge_data['peri_outflow_vehs_by_edge'][edge] for edge in self.config[edge_type]]
+            aggregated_outflow = [sum(edge_outflow) for edge_outflow in zip(*edge_outflow_values)]
+            metric['peri_outflow_vehs_' + direction] = aggregated_outflow
 
         ''' PN density heterogenity'''
         density_PN = edge_data['density']/300
